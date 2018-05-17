@@ -101,7 +101,7 @@
               (make-links raw-links)
               (make-links (map reverse raw-links))))
 
-(pp/println links)
+(println links)
 
 (def raw-steps
   [
@@ -171,7 +171,7 @@
                   :has [{:id  :bucket
                          :has [{:id     :water
                                 :amount 5}]}]}
-                 {:id  :house                               ; rooms / stuff? / precarity???
+                 {:id  :house                               ; rooms / stuff? / precarity??? - not sure this is something an npc 'has' - distinguish between 'has - about person' and 'has - claims ownership'?
                   :has []}]
    :known-steps steps
    :location    :beach
@@ -197,6 +197,137 @@
 
 (defn make-busy [npc map]
 
+  )
+
+(defn ensure-greatest-need [npc]
+  (if-let [need (get-in npc [:busy :need])]
+    npc
+    (assoc-in npc [:busy :need] (last (sort-by second (:needs npc))))))
+
+(defn score-option [option]
+
+  ;TODO:
+  ; copmlete? (but possibly un-optimised)
+  ;   cost? ticks and other things we value
+  ;     divided by:
+  ;   benefit? things we value
+  ; else
+  ;   minus static amount for each unmet dependency
+  option
+  )
+
+(defn find-requirements [requirements step]
+  (let [step-requires (keys (:requires step))
+        step-consumes (keys (:consumes step))
+        step-provides (keys (:provides step))]
+    (as-> requirements x
+          (reduce conj x step-requires)
+          (reduce conj x step-consumes)
+          (reduce disj x step-provides))))
+
+(defn add-step-to [{:keys [start chain end] :as option} reqs]
+  (fn [step]
+    (let [new-reqs (find-requirements reqs step)
+          complete? (empty? (remove (-> start :provides keys set) new-reqs))]
+      (-> option
+          (update :chain conj step)
+          (assoc :complete complete?)))))
+
+(defn prepend-steps [{:keys [start chain end] :as option} npc world]
+  (let [reqs (reduce find-requirements (-> end :consumes keys set) chain)
+        steps (:known-steps npc)
+        useful-steps (remove #(->> % :provides keys (filter reqs) empty?) steps)]
+    (map (add-step-to option reqs) useful-steps)))
+
+(defn optimise [option npc world]
+  ; TODO
+  ; iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
+  ;    eg. "drink water" * (min water-available drinking-needed)
+  (assoc option :optimised true)
+  )
+
+(defn consider-option [npc world]
+  (fn [{:keys [complete optimised] :as option}]
+    (println "consider-option:fn")
+    (cond
+      optimised [option]
+      complete [(optimise option npc world)]
+      :else (prepend-steps option npc world))))
+
+(defn has->provides [npc]
+  ; TODO
+  ;convert what teh npc :has (recursively) to a map of what they can provide
+  {:provides {:at :berry-bushes}})
+
+(defn grow-options [npc world]
+  (let [options (get-in npc [:busy :options])
+        need (get-in npc [:busy :need])
+        options-considered 5]
+
+    (if (empty? options)
+      (assoc-in npc [:busy :options] [{:start (has->provides npc)
+                                       :chain []
+                                       :end   {:consumes (into {} [need])}}])
+
+      ; take first n options
+      ;   incomplete?
+      ;     prepend steps
+      ;   else
+      ;     optimise multipliers
+      ; score options
+      ; sort options
+
+      (let [[to-consider unconsidered] (split-at options-considered options)
+            considered (mapcat (consider-option npc world) to-consider)]
+        (->> (concat considered unconsidered)
+             (map score-option)
+             (sort-by :score)
+             (assoc-in npc [:busy :options]))))
+
+    ; if options empty then seed from greatest-need
+    ; if x options are complete then choose one to act on
+    ; sort exiting options by cost:benefit (consumes/requires : provides)
+    ; pick first n, and mapcat fn over them
+    ;   fn extends each option to one or more options
+
+    ;options [{:consumes {:ticks 10}                         ; must be recalculated by walking the whole path forward,
+    ;          :provides {:drink 5}
+    ;          :requires {:at :well}
+    ;
+    ;          :steps [{:name     "drink water"
+    ;                   :ticks    1
+    ;                   :provides {:drink 1}
+    ;                   :consumes {:water 1}}
+    ;                  {:name     "draw water"
+    ;                   :ticks    5
+    ;                   :provides {:water 5}
+    ;                   :requires {:at :well}}]
+    ;          }]
+
+    ; need to iterate over options potentially extending them (or aborting them?)
+    ; need to know which options are most worth considering
+
+
+    ; list of options
+    ;   mapping of every input option to 1 or more output options (or the same option unchanged if out of thinking time)
+
+
+    ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ; if option chain is incomplete, prepend steps that match requirements
+    ; if option chain is complete, iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
+    ;    eg. drink water x (min water-available drinking-needed)
+    ; if option chain is complete, and multipliers have been adjusted, then report cost:benefit
+
+    ; if thinking cost is high relative to patience then perform first completed option
+    ; if thinking cost is low relative to patience then complete a few more options before picking the best by cost:benefit
+    ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+
+    )
+  )
+
   ; How about...
   ;   build hypothetical tree
   ;   for current state
@@ -213,10 +344,22 @@
 
   ; this could be helped by 'habits' - actions that often go well together - eg. go to well, draw water, drink water
 
-
-  )
-
 (defn algorithm [npc map]
+
+  (-> npc
+      ensure-greatest-need
+      (grow-options map)
+
+      )
+
+  (let [busy (:busy npc)]
+
+
+
+    )
+
+
+
   (if (:busy npc)
     (be-busy npc)
     (make-busy npc map)))
