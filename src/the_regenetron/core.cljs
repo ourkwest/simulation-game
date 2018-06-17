@@ -10,6 +10,20 @@
 
 
 ;; TODO:
+;;  * make npc algorithm handle movement around the map
+;;  * make npc algorithm act as well as plan!
+;;  * game loop / structure?
+;;     * ticks.
+;;         every user actions takes a number of ticks
+;;         same number of ticks per npc - some npc actions will interupt user?
+;;                                      - debug opportunity for all npc actions every tick
+;;  * explore having a more complex world - more map / more tasks
+;;      what can the AI support? some play required here and some tweaking
+;;  * some thought about missions, story, modal simulation / phase transitions
+;;
+;;
+;;
+;;  sketch:
 ;;
 ;;   make automata
 ;;     every tick
@@ -54,6 +68,10 @@
 ;;
 ;;   more ideas: bread baking, axe making, basket weaving, crop harvesting, goat milking, chickens, day-night cycle,
 ;;               regular trading times - or just go to people's houses and wait
+;;
+;;   yet more ideas: at least one character who uses non-traditional gender pronouns
+;;                   varied characters: a witch?, a wizard?, King Gizzard?,
+;;                      Rene Girard, Socrates, Julie D'Aubigny, ...
 
 
 
@@ -64,6 +82,7 @@
 ;;;;                   ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;TODO: is every npc going to have it's own map as well as the world having territory?
 (def places {:beach {:label "the beach"}
              :village-0 {:label  "the centre of the village"
                          :has #{:well}}
@@ -74,7 +93,11 @@
              :village-4 {:label  "the West side of the village"
                          :has #{:player's-house}}
              :north-borders {:label  "the North Borders"
-                             :has #{:berry-bushes}}
+                             ;:object 100
+                             ;:has {:id  :berry-bushes       ; TODO: not :has here, because :has is mutable
+                             ;      :has [{:id     :berries
+                             ;             :amount 100}]}
+                             }
              })
 
 (def raw-links
@@ -103,57 +126,288 @@
 
 (println links)
 
-(def raw-steps
-  [
-   [:drink-water  #{:water-at-hand}    1 #{:less-thirst}]
-   [:draw-water   #{:well}             3 #{:water-at-hand}]
-   [:eat-berries  #{:berries-in-hand}  1 #{:less-hunger}]
-   [:pick-berries #{:berry-bushes}     3 #{:berries-in-hand}]
-   ])
+(comment
 
-(def tasks
+  (def raw-steps
+    [
+     [:drink-water #{:water-at-hand} 1 #{:less-thirst}]
+     [:draw-water #{:well} 3 #{:water-at-hand}]
+     [:eat-berries #{:berries-in-hand} 1 #{:less-hunger}]
+     [:pick-berries #{:berry-bushes} 3 #{:berries-in-hand}]
+     ])
 
-  ; should always(?) be possible to move to any of the places
-  ;
-  )
+  (def tasks
 
-(def need-multipliers ; unnecesary? we can control the rate of change in both directions
-  {:drink 1000
-   :sleep  100
-   :food   100})
+    ; should always(?) be possible to move to any of the places
+    ;
+    )
+
+  (def need-multipliers                                     ; unnecesary? we can control the rate of change in both directions
+    {:drink 1000
+     :sleep 100
+     :food  100}))
+
+;(def objects
+;  (atom
+;    {100 {:desc "North Borders"
+;          :has  [5]}
+;
+;     1 {:desc "axe"}
+;     2 {:desc "berry"}
+;     3 {:desc "berry"}
+;     4 {:desc "berry"}
+;     5 {:desc "berry bush"
+;        :has  [2 3 4]}
+;     }))
+
+; TODO: =======================================================
+; {[:loc :id] {details...}
+;  [:npc :id] {details...}
+;  [:npc :id] {details...}}
+; TODO: =======================================================
 
 (def steps
+  ; TODO!!! Verbs should be parameterised! "Eat <item>"
+  ; or is it better not to? all the specific information must be specified -
+  ; eating berries IS different to eating bread
+  ;  - you need berries!
+  ;  - it provides a different amount of calories
+  ;  - berries have more water in them (provide more drink)
   [
    {:name     "drink water"
     :ticks    1
-    :provides {:drink 1}
-    :consumes {:water 1}}
+    :provides {[:npc :drink] {:quantity 1}}
+    :consumes {[:npc :water] {:quantity 1}}}
 
    {:name     "draw water"
     :ticks    5
-    :provides {:water 5}
-    :requires {:at :well}}
+    :provides {[:loc :water] {:quantity 5}}
+    :requires {[:loc :well] {:quantity 1}}}
 
    {:name     "eat berry"
     :ticks    2
-    :provides {:drink 0.2
-               :food  0.8}
-    :consumes {:berries 1}}
+    :provides {[:npc :drink] {:quantity 0.2}
+               [:npc :food]  {:quantity 0.8}}
+    :consumes {[:npc :berries] {:quantity 1}}}
+
+   ;{:name     "pick berry"                                  ; TODO: somehow model transferring berries from the bush to the hand.
+   ; :ticks    3
+   ; :provides {:id  :hand
+   ;            :has {:berries 1}}
+   ; :consumes {:id  :hand
+   ;            :has :empty}
+   ; :requires {:location {:has {:id  :berry-bushes          ; this is convoluted - :requires {:berries 1} should suffice???
+   ;                             :has {:id     :berries
+   ;                                   :amount 1}}}}}
 
    {:name     "pick berry"
     :ticks    3
-    :provides {:berries 1}
-    :requires {:at :berry-bushes}}
+    :provides {[:npc :berries] {:quantity 1}}
+    :consumes {[:loc :berries] {:quantity 1}}}
+
+   ; special case logic for actions that move things around?
+   ;   "take" move <x> from 'at location' to 'holding' and set ownership
+   ;   "drop" inverse ^
+   ; maybe a function to return steps based on things they provide - returns all matching steps, plus synthetic ones
+
+   ; "ensure holding" <x> ("hold")
 
    {:name     "sleep"
     :ticks    80
-    :provides {:sleep 100}
-    :requires {:at :home}}
+    :provides {[:npc :sleep] {:quantity 100}}
+    :requires {[:loc :bed] {:owned true}}}
 
    {:name     "nap"
     :ticks    20
-    :provides {:sleep 10}}]
+    :provides {[:npc :sleep] {:quantity 10}}}
 
+   {:name     "fell a tree"
+    :ticks    100
+    :requires {[:npc :axe] {:quantity 1}}
+    :consumes {[:loc :standing-tree] {:quantity 1}}
+    :provides {[:loc :felled-tree] {:quantity 1}}}
+   ]
+
+  )
+
+
+(defn merge-key [m k f a b]
+  (let [v (f (k a) (k b))]
+    (if v
+      (assoc m k v)
+      m)))
+
+(defn nil+ [a b]
+  (if (and a b)
+    (+ a b)
+    (or a b)))
+
+(defn merge-objects [a b]
+  (-> {}
+      (merge-key :quantity (fnil + 1 1) a b)
+      ;TODO: merge other attributes
+      ))
+
+(defn has->provides [npc-loc thing]
+  (println 'has->provides)
+
+  (let [children (:has thing)
+        children-maps (for [child children]
+                       {[npc-loc (:id child)] (dissoc child :id)})]
+    (apply merge-with merge-objects
+      (concat children-maps
+              (when (seq children)
+                (map (partial has->provides npc-loc) children)))))
+
+  ;(let [children (:has thing)
+  ;      children-ids (map #(vector npc-loc (:id %)) children)]
+  ;  (distinct
+  ;    (concat
+  ;      children-ids
+  ;      (when (seq children)
+  ;        (mapcat (partial has->provides npc-loc) children)))))
+
+  ; TODO
+  ;convert what teh npc :has (recursively) to a map of what they can provide
+  ;{:provides {:at :berry-bushes}}
+  )
+
+(def game-state
+  (atom
+
+    {
+     ;:objects   {1 {:id :axe}
+     ;            2 {:id :berry}
+     ;            3 {:id :berry}
+     ;            4 {:id :berry}
+     ;            5 {:id :berry-bush
+     ;               :has [2 3 4]}
+     ;            }
+
+     :locations {:north-borders {:id  :north-borders
+                                 :has [{:id  :berry-bush
+                                        :has [{:id :berry}
+                                              {:id :berry}
+                                              {:id :berry}]}]
+
+                                 ; How much detail does :provides need?
+                                 ; maybe try just a list of ids for now?
+                                 ;:provides [{:id :berry-bush
+                                 ;            :has [{:id :berry}
+                                 ;                  {:id :berry}
+                                 ;                  {:id :berry}]}              ; derived from :has when :has changes
+                                 ;           {:id :berry}
+                                 ;           {:id :berry}
+                                 ;           {:id :berry}]
+
+                                 ;{[:loc :berry-bush] {:quantity 1}
+                                 ; [:loc :berry]      {:quantity 3}}
+                                 }}                         ;TODO: pre-calculate per frame? on change? recursive :has
+
+     :people    {:some-id? {:needs       {:food     100
+                                          :drink    50
+                                          :sleep    10
+                                          :chat     0                                ; capped at 75? some way to differentiate between needs and wants?
+                                          :warmth   0
+                                          :security 0}
+                            :has         [{:id       :water
+                                           :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
+                                          {:id       :berry
+                                           :quantity 5}            ; fifo queue when picking things up - hold limit
+                                          {:id  :bucket
+                                           :has [{:id       :water
+                                                  :quantity 50}]}]
+                            :known-steps steps
+                            :location    :beach
+                            :busy        nil}
+
+                 }
+
+     }
+
+    ))
+
+(defn mapvals [m f]
+  (into {} (for [[k v] m]
+             [k (f v)])))
+
+;TODO: when should this happen?
+(swap! game-state update :locations mapvals
+       (fn [loc]
+         (assoc loc :provides (has->provides :loc loc))))
+
+;(def object-locations
+;  (atom
+;    {:north-borders [5]}))
+
+; TODO: Possession!!!
+;   {:has {:has {:has ...}}} ?
+;   locations possess
+;     nested (perhaps deeply)
+;   characters possess
+;     in their hands - limited storage space! must be able to carry a sizeable log - maybe don't model individual hands!
+;                    - lru cache? drop oldest thing picked up when picking up a new thing if you run out of carry space
+;     in their houses
+;     everywhere? - I chopped down that tree, but I can't carry it all at once! - is this a different concept ("ownership"?)
+;     ownership - flag on item to say who owns it.
+;               - also characters maintain mental list of things they own and where they are, so that their expectations can be violated.
+;   steps
+;     require possession in hand or in location
+;
+;   one big list of game objects
+;     actually a map keyed by id
+;     { "bag of holding" {:has #{"cheese sandwich"}
+;                         :owned :bob / false}
+;       "cheese sandwich" {} }
+
+
+
+(defn fixed-steps-providing [npc npc-loc item-id]
+  (filter
+    (fn [{:keys [provides]}]
+      (get provides [npc-loc item-id]))
+    (:known-steps npc)))
+
+(defn synthetic-steps-providing [locs npc-loc item-id]
+  (if (= npc-loc :npc)
+    [{:name     (str "hold " (name item-id))
+      :provides {[:npc item-id] 1}
+      :consumes {[:loc item-id] 1}}]
+    (for [[loc-id loc] locs :when (-> loc :provides (get [:loc item-id]))]
+      {:name     (str "go to " (name (:id loc)))            ; better!
+       :ticks    5                                             ; calculate!
+       :provides (:provides loc)})))                        ;TODO: needs to be {[:loc :id] quantity} !!!
+
+(defn steps-providing [npc locs [npc-loc item-id]]
+  (concat
+    (fixed-steps-providing npc npc-loc item-id)
+    (synthetic-steps-providing locs npc-loc item-id)))
+
+;(def verbs
+;  [
+;   {:desc     "{who} drink|drinks {what}"
+;    :ticks    1
+;    :provides {:id     :drink
+;               :amount :drinkable}
+;    :consumes {:drinkable 1}}
+;   {:desc     "{who} eat|eats {what}"
+;    :ticks    [1 :edible]                                   ; (* 1 (:edible what))
+;    :consumes {:edible 1}
+;    }
+;   ])
+
+;(def nouns
+;  [{:id        "water"
+;    :drinkable {:provides {:drink 5}}}
+;   {:id     "berry"
+;    :edible {:ticks    2
+;             :provides {:food  5
+;                        :drink 1}}}])
+
+(comment
+  (defverb "{who} drink|drinks {what}" [place who what]
+
+           )
   )
 
 (def npc
@@ -191,18 +445,19 @@
 ; PLUS synthetic step {:name "go to <...>" :ticks <distance>
 
 
-(defn be-busy [npc]
-  ;TODO!
-  npc)
+;(defn be-busy [npc]
+;  ;TODO!
+;  npc)
 
-(defn make-busy [npc map]
-
-  )
+;(defn make-busy [npc map]
+;
+;  )
 
 (defn ensure-greatest-need [npc]
   (if-let [need (get-in npc [:busy :need])]
     npc
-    (assoc-in npc [:busy :need] (last (sort-by second (:needs npc))))))
+    (let [[id amount] (last (sort-by second (:needs npc)))]
+      (assoc-in npc [:busy :need] {[:npc id] amount}))))
 
 (defn score-option [option]
 
@@ -217,9 +472,9 @@
   )
 
 (defn find-requirements [requirements step]
-  (let [step-requires (keys (:requires step))
-        step-consumes (keys (:consumes step))
-        step-provides (keys (:provides step))]
+  (let [step-requires (:requires step)
+        step-consumes (:consumes step)
+        step-provides (:provides step)]
     (as-> requirements x
           (reduce conj x step-requires)
           (reduce conj x step-consumes)
@@ -227,17 +482,28 @@
 
 (defn add-step-to [{:keys [start chain end] :as option} reqs]
   (fn [step]
-    (let [new-reqs (find-requirements reqs step)
-          complete? (empty? (remove (-> start :provides keys set) new-reqs))]
+    (let [_ (println step)
+          new-reqs (find-requirements reqs step)
+          _ (println 'new-reqs new-reqs)
+          _ (println (-> start :provides))
+          complete? (empty? (remove (-> start :provides keys set) new-reqs))
+          _ (println complete?)]
       (-> option
           (update :chain conj step)
           (assoc :complete complete?)))))
 
-(defn prepend-steps [{:keys [start chain end] :as option} npc world]
+(defn prepend-steps [{:keys [start chain end] :as option} npc locs]
+  (println "prepend-steps")
   (let [reqs (reduce find-requirements (-> end :consumes keys set) chain)
-        steps (:known-steps npc)
-        useful-steps (remove #(->> % :provides keys (filter reqs) empty?) steps)]
-    (map (add-step-to option reqs) useful-steps)))
+        _ (println 1)
+        _ (println 'reqs reqs)
+        useful-steps (mapcat (partial steps-providing npc locs) reqs)
+        _ (println 2)
+        _ (println 'useful-steps useful-steps)
+        ;steps (:known-steps npc)
+        ;useful-steps (remove #(->> % :provides keys (filter reqs) empty?) steps)
+        ]
+    (mapv (add-step-to option reqs) useful-steps)))
 
 (defn optimise [option npc world]
   ; TODO
@@ -246,26 +512,21 @@
   (assoc option :optimised true)
   )
 
-(defn consider-option [npc world]
+(defn consider-option [npc locs]
   (fn [{:keys [complete optimised] :as option}]
-    (println "consider-option:fn")
+    (println "consider-option")
     (cond
       optimised [option]
-      complete [(optimise option npc world)]
-      :else (prepend-steps option npc world))))
+      complete [(optimise option npc locs)]
+      :else (prepend-steps option npc locs))))
 
-(defn has->provides [npc]
-  ; TODO
-  ;convert what teh npc :has (recursively) to a map of what they can provide
-  {:provides {:at :berry-bushes}})
-
-(defn grow-options [npc world]
+(defn grow-options [npc locs]
   (let [options (get-in npc [:busy :options])
         need (get-in npc [:busy :need])
         options-considered 5]
 
     (if (empty? options)
-      (assoc-in npc [:busy :options] [{:start (has->provides npc)
+      (assoc-in npc [:busy :options] [{:start {:provides (has->provides :npc npc)} ;TODO: also get 'provides' from current npc location
                                        :chain []
                                        :end   {:consumes (into {} [need])}}])
 
@@ -278,7 +539,11 @@
       ; sort options
 
       (let [[to-consider unconsidered] (split-at options-considered options)
-            considered (mapcat (consider-option npc world) to-consider)]
+            considered (mapcat (consider-option npc locs) to-consider)
+            _ (println 'X)
+            _ (doall considered)
+            _ (println 'Y)
+            ]
         (->> (concat considered unconsidered)
              (map score-option)
              (sort-by :score)
@@ -344,25 +609,26 @@
 
   ; this could be helped by 'habits' - actions that often go well together - eg. go to well, draw water, drink water
 
-(defn algorithm [npc map]
+(defn algorithm [npc locs]
 
   (-> npc
       ensure-greatest-need
-      (grow-options map)
+      (grow-options locs)
 
       )
 
-  (let [busy (:busy npc)]
+  ;(let [busy (:busy npc)]
+  ;
+  ;
+  ;
+  ;  )
 
 
 
-    )
-
-
-
-  (if (:busy npc)
-    (be-busy npc)
-    (make-busy npc map)))
+  ;(if (:busy npc)
+  ;  (be-busy npc)
+  ;  (make-busy npc map))
+  )
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
