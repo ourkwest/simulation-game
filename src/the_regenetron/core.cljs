@@ -166,6 +166,14 @@
 ;  [:npc :id] {details...}}
 ; TODO: =======================================================
 
+(def abstract
+  #{:food
+    :drink
+    :sleep
+    :chat
+    :warmth
+    :security})
+
 (def steps
   ; TODO!!! Verbs should be parameterised! "Eat <item>"
   ; or is it better not to? all the specific information must be specified -
@@ -188,7 +196,7 @@
     :ticks    2
     :provides {[:npc :drink] {:quantity 0.2}
                [:npc :food]  {:quantity 0.8}}
-    :consumes {[:npc :berries] {:quantity 1}}}
+    :consumes {[:npc :berry] {:quantity 1}}}
 
    ;{:name     "pick berry"                                  ; TODO: somehow model transferring berries from the bush to the hand.
    ; :ticks    3
@@ -202,8 +210,8 @@
 
    {:name     "pick berry"
     :ticks    3
-    :provides {[:npc :berries] {:quantity 1}}
-    :consumes {[:loc :berries] {:quantity 1}}}
+    :provides {[:npc :berry] {:quantity 1}}
+    :consumes {[:loc :berry] {:quantity 1}}}
 
    ; special case logic for actions that move things around?
    ;   "take" move <x> from 'at location' to 'holding' and set ownership
@@ -242,11 +250,22 @@
     (+ a b)
     (or a b)))
 
-(defn merge-objects [a b]
+(defn add-objects [a b]
   (-> {}
       (merge-key :quantity (fnil + 1 1) a b)
       ;TODO: merge other attributes
       ))
+
+(defn subtract-objects [a b]
+  (-> {}
+      (merge-key :quantity (fnil - 1 1) a b)
+      ;TODO: merge other attributes
+      ))
+
+(def merge-add (partial merge-with add-objects))
+(def merge-subtract (partial merge-with subtract-objects))
+(defn merge-remove [a b]
+  (apply dissoc a (keys b)))
 
 (defn has->provides [npc-loc thing]
   (println 'has->provides)
@@ -254,7 +273,7 @@
   (let [children (:has thing)
         children-maps (for [child children]
                        {[npc-loc (:id child)] (dissoc child :id)})]
-    (apply merge-with merge-objects
+    (apply merge-add
       (concat children-maps
               (when (seq children)
                 (map (partial has->provides npc-loc) children)))))
@@ -304,12 +323,12 @@
                                  ; [:loc :berry]      {:quantity 3}}
                                  }}                         ;TODO: pre-calculate per frame? on change? recursive :has
 
-     :people    {:some-id? {:needs       {:food     100
-                                          :drink    50
-                                          :sleep    10
-                                          :chat     0                                ; capped at 75? some way to differentiate between needs and wants?
-                                          :warmth   0
-                                          :security 0}
+     :people    {:some-id? {:needs       {:food     {:quantity 100}
+                                          :drink    {:quantity 50}
+                                          :sleep    {:quantity 10}
+                                          :chat     {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
+                                          :warmth   {:quantity 0}
+                                          :security {:quantity 0}}
                             :has         [{:id       :water
                                            :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
                                           {:id       :berry
@@ -362,26 +381,28 @@
 
 
 
-(defn fixed-steps-providing [npc npc-loc item-id]
+(defn fixed-steps-providing [npc item-key]
   (filter
     (fn [{:keys [provides]}]
-      (get provides [npc-loc item-id]))
+      (get provides item-key))
     (:known-steps npc)))
 
-(defn synthetic-steps-providing [locs npc-loc item-id]
+(defn synthetic-steps-providing [locs [npc-loc item-id]]
   (if (= npc-loc :npc)
-    [{:name     (str "hold " (name item-id))
-      :provides {[:npc item-id] 1}
-      :consumes {[:loc item-id] 1}}]
+    (when-not (abstract item-id)
+      [{:name     (str "hold " (name item-id))
+        :ticks    1
+        :provides {[:npc item-id] {:quantity 1}}
+        :consumes {[:loc item-id] {:quantity 1}}}])
     (for [[loc-id loc] locs :when (-> loc :provides (get [:loc item-id]))]
       {:name     (str "go to " (name (:id loc)))            ; better!
        :ticks    5                                             ; calculate!
        :provides (:provides loc)})))                        ;TODO: needs to be {[:loc :id] quantity} !!!
 
-(defn steps-providing [npc locs [npc-loc item-id]]
+(defn steps-providing [npc locs item-key]
   (concat
-    (fixed-steps-providing npc npc-loc item-id)
-    (synthetic-steps-providing locs npc-loc item-id)))
+    (fixed-steps-providing npc item-key)
+    (synthetic-steps-providing locs item-key)))
 
 ;(def verbs
 ;  [
@@ -404,34 +425,34 @@
 ;             :provides {:food  5
 ;                        :drink 1}}}])
 
-(comment
-  (defverb "{who} drink|drinks {what}" [place who what]
+;(comment
+;  (defverb "{who} drink|drinks {what}" [place who what]
+;
+;           )
+;  )
 
-           )
-  )
-
-(def npc
-  ; characters could have 'known-skills' - transferred by socialising, improved by practice (reduced cost)
-  {:needs       {:food     100
-                 :drink    50
-                 :sleep    10
-                 :chat     0                                ; capped at 75? some way to differentiate between needs and wants?
-                 :warmth   0
-                 :security 0}
-   :has         [{:id  :hand
-                  :has [{:id     :water
-                         :amount 1}]}
-                 {:id  :hand
-                  :has [{:id  :bucket
-                         :has [{:id     :water
-                                :amount 5}]}]}
-                 {:id  :house                               ; rooms / stuff? / precarity??? - not sure this is something an npc 'has' - distinguish between 'has - about person' and 'has - claims ownership'?
-                  :has []}]
-   :known-steps steps
-   :location    :beach
-   :busy        nil}
-
-  )
+;(def npc
+;  ; characters could have 'known-skills' - transferred by socialising, improved by practice (reduced cost)
+;  {:needs       {:food     100
+;                 :drink    50
+;                 :sleep    10
+;                 :chat     0                                ; capped at 75? some way to differentiate between needs and wants?
+;                 :warmth   0
+;                 :security 0}
+;   :has         [{:id  :hand
+;                  :has [{:id     :water
+;                         :amount 1}]}
+;                 {:id  :hand
+;                  :has [{:id  :bucket
+;                         :has [{:id     :water
+;                                :amount 5}]}]}
+;                 {:id  :house                               ; rooms / stuff? / precarity??? - not sure this is something an npc 'has' - distinguish between 'has - about person' and 'has - claims ownership'?
+;                  :has []}]
+;   :known-steps steps
+;   :location    :beach
+;   :busy        nil}
+;
+;  )
 
 ;(def items-by-need-addressed
 ;
@@ -456,7 +477,7 @@
 (defn ensure-greatest-need [npc]
   (if-let [need (get-in npc [:busy :need])]
     npc
-    (let [[id amount] (last (sort-by second (:needs npc)))]
+    (let [[id amount] (last (sort-by (comp :quantity second) (:needs npc)))]
       (assoc-in npc [:busy :need] {[:npc id] amount}))))
 
 (defn score-option [option]
@@ -482,22 +503,32 @@
 
 (defn add-step-to [{:keys [start chain end] :as option} reqs]
   (fn [step]
-    (let [_ (println step)
-          new-reqs (find-requirements reqs step)
-          _ (println 'new-reqs new-reqs)
-          _ (println (-> start :provides))
+    (let [
+          ;_ (println step)
+          ;new-reqs (find-requirements reqs step)
+
+          new-reqs (-> reqs
+                       (merge-add (:requires step) (:consumes step))
+                       (merge-remove (:provides step)))
+
+          ;_ (println 'new-reqs new-reqs)
+          ;_ (println (-> start :provides))
           complete? (empty? (remove (-> start :provides keys set) new-reqs))
-          _ (println complete?)]
+          ;_ (println complete?)
+          ]
       (-> option
-          (update :chain conj step)
+          (update :chain conj (assoc step :complete complete? :reqs new-reqs))
           (assoc :complete complete?)))))
 
 (defn prepend-steps [{:keys [start chain end] :as option} npc locs]
   (println "prepend-steps")
-  (let [reqs (reduce find-requirements (-> end :consumes keys set) chain)
+  (let [reqs (or (some-> chain last :reqs)
+                 (-> end :consumes))
+        ;reqs (reduce find-requirements (-> end :consumes keys set) chain)
         _ (println 1)
-        _ (println 'reqs reqs)
-        useful-steps (mapcat (partial steps-providing npc locs) reqs)
+        _ (println '(keys reqs) (keys reqs))
+        _ (println '[locs] [locs])
+        useful-steps (mapcat (partial steps-providing npc locs) (keys reqs))
         _ (println 2)
         _ (println 'useful-steps useful-steps)
         ;steps (:known-steps npc)
