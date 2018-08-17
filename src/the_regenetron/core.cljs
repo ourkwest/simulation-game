@@ -1,7 +1,8 @@
 (ns the-regenetron.core
-    (:require
-      [reagent.core :as reagent :refer [atom]]
-      [cljs.pprint :as pp]))
+  (:require
+    [reagent.core :as reagent :refer [atom]]
+    [cljs.pprint :as pp]
+    [clojure.string :as string]))
 
 (enable-console-print!)
 
@@ -208,10 +209,10 @@
    ;                             :has {:id     :berries
    ;                                   :amount 1}}}}}
 
-   {:name     "pick berry"
-    :ticks    3
-    :provides {[:npc :berry] {:quantity 1}}
-    :consumes {[:loc :berry] {:quantity 1}}}
+   ;{:name     "pick berry"
+   ; :ticks    3
+   ; :provides {[:npc :berry] {:quantity 1}}
+   ; :consumes {[:loc :berry] {:quantity 1}}}
 
    ; special case logic for actions that move things around?
    ;   "take" move <x> from 'at location' to 'holding' and set ownership
@@ -268,7 +269,7 @@
   (apply dissoc a (keys b)))
 
 (defn has->provides [npc-loc thing]
-  (println 'has->provides)
+  ;(println 'has->provides)
 
   (let [children (:has thing)
         children-maps (for [child children]
@@ -321,14 +322,21 @@
 
                                  ;{[:loc :berry-bush] {:quantity 1}
                                  ; [:loc :berry]      {:quantity 3}}
-                                 }}                         ;TODO: pre-calculate per frame? on change? recursive :has
+                                 }
+                 :village-0 {:id :village-0
+                             :has [{:id :well}]}
 
-     :people    {:some-id? {:needs       {:food     {:quantity 100}
-                                          :drink    {:quantity 50}
-                                          :sleep    {:quantity 10}
-                                          :chat     {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
-                                          :warmth   {:quantity 0}
-                                          :security {:quantity 0}}
+                 :beach {:id :beach
+                         :has [{:id :palm-tree}]}
+
+                 } ;TODO: pre-calculate per frame? on change? recursive :has
+
+     :people    {:some-id? {:reqs        {[:npc :food]     {:quantity 100}
+                                          [:npc :drink]    {:quantity 50}
+                                          [:npc :sleep]    {:quantity 10}
+                                          [:npc :chat]     {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
+                                          [:npc :warmth]   {:quantity 0}
+                                          [:npc :security] {:quantity 0}}
                             :has         [{:id       :water
                                            :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
                                           {:id       :berry
@@ -390,7 +398,7 @@
 (defn synthetic-steps-providing [locs [npc-loc item-id]]
   (if (= npc-loc :npc)
     (when-not (abstract item-id)
-      [{:name     (str "hold " (name item-id))
+      [{:name     (str "take " (name item-id))
         :ticks    1
         :provides {[:npc item-id] {:quantity 1}}
         :consumes {[:loc item-id] {:quantity 1}}}])
@@ -475,10 +483,17 @@
 ;  )
 
 (defn ensure-greatest-need [npc]
-  (if-let [need (get-in npc [:busy :need])]
+  (if-let [reqs (get-in npc [:busy :reqs])]
     npc
-    (let [[id amount] (last (sort-by (comp :quantity second) (:needs npc)))]
-      (assoc-in npc [:busy :need] {[:npc id] amount}))))
+    (assoc-in npc [:busy :reqs] (->> npc
+                                     :reqs
+                                     (sort-by (comp :quantity second))
+                                     (take-last 1)
+                                     (into {})))
+
+    ;(let [[id amount] (last (sort-by (comp :quantity second) (:needs npc)))]
+    ;  (assoc-in npc [:busy :need] {[:npc id] amount}))
+    ))
 
 (defn score-option [option]
 
@@ -507,30 +522,34 @@
           ;_ (println step)
           ;new-reqs (find-requirements reqs step)
 
+
+
           new-reqs (-> reqs
                        (merge-add (:requires step) (:consumes step))
                        (merge-remove (:provides step)))
 
-          ;_ (println 'new-reqs new-reqs)
-          ;_ (println (-> start :provides))
-          complete? (empty? (remove (-> start :provides keys set) new-reqs))
-          ;_ (println complete?)
+          _ (println '(keys new-reqs) (keys new-reqs))
+          _ (println (-> start :provides keys set))
+          complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))
+          _ (println complete?)
           ]
       (-> option
-          (update :chain conj (assoc step :complete complete? :reqs new-reqs))
+          (update :chain conj (assoc step :complete complete?
+                                          :reqs new-reqs
+                                          :min 1
+                                          :n 1))
           (assoc :complete complete?)))))
 
 (defn prepend-steps [{:keys [start chain end] :as option} npc locs]
-  (println "prepend-steps")
-  (let [reqs (or (some-> chain last :reqs)
-                 (-> end :consumes))
+  ;(println "prepend-steps")
+  (let [reqs (or (some-> chain last :reqs) (:reqs end))
         ;reqs (reduce find-requirements (-> end :consumes keys set) chain)
-        _ (println 1)
-        _ (println '(keys reqs) (keys reqs))
-        _ (println '[locs] [locs])
-        useful-steps (mapcat (partial steps-providing npc locs) (keys reqs))
-        _ (println 2)
-        _ (println 'useful-steps useful-steps)
+        ;_ (println 1)
+        ;_ (println '(keys reqs) (keys reqs))
+        ;_ (println '[locs] [locs])
+        useful-steps (distinct (mapcat (partial steps-providing npc locs) (keys reqs)))
+        ;_ (println 2)
+        ;_ (println 'useful-steps useful-steps)
         ;steps (:known-steps npc)
         ;useful-steps (remove #(->> % :provides keys (filter reqs) empty?) steps)
         ]
@@ -545,7 +564,7 @@
 
 (defn consider-option [npc locs]
   (fn [{:keys [complete optimised] :as option}]
-    (println "consider-option")
+    ;(println "consider-option")
     (cond
       optimised [option]
       complete [(optimise option npc locs)]
@@ -553,13 +572,15 @@
 
 (defn grow-options [npc locs]
   (let [options (get-in npc [:busy :options])
-        need (get-in npc [:busy :need])
+        loc-provides (-> npc :location locs :provides)
+        ;need (get-in npc [:busy :reqs])
         options-considered 5]
 
     (if (empty? options)
-      (assoc-in npc [:busy :options] [{:start {:provides (has->provides :npc npc)} ;TODO: also get 'provides' from current npc location
+      (assoc-in npc [:busy :options] [{:start {:provides (merge-add (has->provides :npc npc)
+                                                                    loc-provides)}
                                        :chain []
-                                       :end   {:consumes (into {} [need])}}])
+                                       :end   {:reqs (get-in npc [:busy :reqs])}}])
 
       ; take first n options
       ;   incomplete?
@@ -571,12 +592,12 @@
 
       (let [[to-consider unconsidered] (split-at options-considered options)
             considered (mapcat (consider-option npc locs) to-consider)
-            _ (println 'X)
+            ;_ (println 'X)
             _ (doall considered)
-            _ (println 'Y)
+            ;_ (println 'Y)
             ]
         (->> (concat considered unconsidered)
-             (map score-option)
+             (mapv score-option)
              (sort-by :score)
              (assoc-in npc [:busy :options]))))
 
@@ -640,6 +661,19 @@
 
   ; this could be helped by 'habits' - actions that often go well together - eg. go to well, draw water, drink water
 
+(defn describe-options [npc]
+
+  (doseq [option (-> npc :busy :options)]
+
+    (println
+      (str (when-not (:complete option)
+             "     ...   -> ")
+           (string/join " -> " (map :name (reverse (:chain option))))))
+
+    )
+  npc
+  )
+
 (defn algorithm [npc locs]
 
   (-> npc
@@ -659,6 +693,7 @@
   ;(if (:busy npc)
   ;  (be-busy npc)
   ;  (make-busy npc map))
+  ;npc
   )
 
 
