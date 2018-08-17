@@ -292,6 +292,16 @@
   ;{:provides {:at :berry-bushes}}
   )
 
+(def npc-needs [[:npc :food]
+                [:npc :drink]
+                [:npc :sleep]
+                [:npc :chat]
+                [:npc :warmth]
+                [:npc :security]])
+
+(def default-npc-reqs
+  (zipmap npc-needs (repeat {:quantity 0})))
+
 (def game-state
   (atom
 
@@ -323,24 +333,27 @@
                                  ;{[:loc :berry-bush] {:quantity 1}
                                  ; [:loc :berry]      {:quantity 3}}
                                  }
-                 :village-0 {:id :village-0
-                             :has [{:id :well}]}
+                 :village-0     {:id  :village-0
+                                 :has [{:id :well}]}
 
-                 :beach {:id :beach
-                         :has [{:id :palm-tree}]}
+                 :beach         {:id  :beach
+                                 :has [{:id  :palm-tree
+                                        :has [{:id       :berry
+                                               :quantity 5}]}]}
 
                  } ;TODO: pre-calculate per frame? on change? recursive :has
 
-     :people    {:some-id? {:reqs        {[:npc :food]     {:quantity 100}
-                                          [:npc :drink]    {:quantity 50}
-                                          [:npc :sleep]    {:quantity 10}
-                                          [:npc :chat]     {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
-                                          [:npc :warmth]   {:quantity 0}
-                                          [:npc :security] {:quantity 0}}
+     :people    {:some-id? {:reqs        (merge
+                                           default-npc-reqs
+                                           {[:npc :food]  {:quantity 100} ; TODO: should these be negative?
+                                            [:npc :drink] {:quantity 50}
+                                            [:npc :sleep] {:quantity 10}
+                                            [:npc :chat]  {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
+                                            })
                             :has         [{:id       :water
                                            :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
-                                          {:id       :berry
-                                           :quantity 5}            ; fifo queue when picking things up - hold limit
+                                          ;{:id       :berry
+                                          ; :quantity 5}            ; fifo queue when picking things up - hold limit
                                           {:id  :bucket
                                            :has [{:id       :water
                                                   :quantity 50}]}]
@@ -495,16 +508,29 @@
     ;  (assoc-in npc [:busy :need] {[:npc id] amount}))
     ))
 
-(defn score-option [option]
+(defn apply-chain [reqs step]
+  (merge-subtract reqs (:provides step)))
 
-  ;TODO:
-  ; copmlete? (but possibly un-optimised)
-  ;   cost? ticks and other things we value
-  ;     divided by:
-  ;   benefit? things we value
-  ; else
-  ;   minus static amount for each unmet dependency
-  option
+(defn score-reqs [reqs]
+  (apply - 0 (map (comp :quantity reqs) npc-needs)))
+
+(defn score-option [npc option]
+  (if (-> option :score :thought)
+    option
+    (let [cost (transduce (map :ticks) + (:chain option))   ; should we add value of things consumed? - how would we value them, AND - their only value is in their ability to be consumed!!!
+          benefit (- (score-reqs (reduce apply-chain (:reqs npc) (:chain option)))
+                     (score-reqs (:reqs npc)))]
+      ;TODO:
+      ; copmlete? (but possibly un-optimised)
+      ;   cost? ticks and other things we value
+      ;     divided by:
+      ;   benefit? things we value
+      ; else
+      ;   minus static amount for each unmet dependency
+      (assoc option :score {:cost    cost
+                            :benefit benefit
+                            :value   (float (/ benefit cost))
+                            :thought (when (:optimised option) (:thinking (:busy npc)))})))
   )
 
 (defn find-requirements [requirements step]
@@ -577,10 +603,12 @@
         options-considered 5]
 
     (if (empty? options)
-      (assoc-in npc [:busy :options] [{:start {:provides (merge-add (has->provides :npc npc)
-                                                                    loc-provides)}
-                                       :chain []
-                                       :end   {:reqs (get-in npc [:busy :reqs])}}])
+      (-> npc
+          (assoc-in [:busy :options] [{:start {:provides (merge-add (has->provides :npc npc)
+                                                                            loc-provides)}
+                                               :chain '()
+                                               :end   {:reqs (get-in npc [:busy :reqs])}}])
+          (assoc-in [:busy :thinking] 1))
 
       ; take first n options
       ;   incomplete?
@@ -596,10 +624,12 @@
             _ (doall considered)
             ;_ (println 'Y)
             ]
-        (->> (concat considered unconsidered)
-             (mapv score-option)
-             (sort-by :score)
-             (assoc-in npc [:busy :options]))))
+
+        (-> npc
+            (assoc-in [:busy :options] (->> (concat considered unconsidered)
+                                            (mapv (partial score-option npc))
+                                            (sort-by (comp :value :score))))
+            (update-in [:busy :thinking] inc))))
 
     ; if options empty then seed from greatest-need
     ; if x options are complete then choose one to act on
@@ -674,13 +704,33 @@
   npc
   )
 
+(defn make-progress [npc locs]
+  (println "doing stuff!")
+  )
+
+(defn try-to-choose-an-option [npc]
+  (let [thinking (-> npc :busy :thinking)
+        best-option-so-far (-> npc :busy :options first)
+        thought (-> best-option-so-far :score :thought)]
+    (if (> thinking (+ thought 3))
+      (assoc-in npc [:busy :todo] (:chain best-option-so-far))
+      npc)))
+
+(defn choose-greatest-need [npc]
+  (assoc-in npc [:busy :reqs] (->> npc
+                                   :reqs
+                                   (sort-by (comp :quantity second))
+                                   (take-last 1)
+                                   (into {}))))
+
 (defn algorithm [npc locs]
 
-  (-> npc
-      ensure-greatest-need
-      (grow-options locs)
 
-      )
+  (cond
+    (-> npc :busy :todo) (make-progress npc locs)
+    (-> npc :busy :reqs) (try-to-choose-an-option (grow-options npc locs))
+    :else (choose-greatest-need npc))
+
 
   ;(let [busy (:busy npc)]
   ;
