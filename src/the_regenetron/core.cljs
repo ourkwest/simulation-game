@@ -596,7 +596,7 @@
       complete [(optimise option npc locs)]
       :else (prepend-steps option npc locs))))
 
-(defn grow-options [npc locs]
+(defn grow-options [[npc locs]]
   (let [options (get-in npc [:busy :options])
         loc-provides (-> npc :location locs :provides)
         ;need (get-in npc [:busy :reqs])
@@ -605,10 +605,11 @@
     (if (empty? options)
       (-> npc
           (assoc-in [:busy :options] [{:start {:provides (merge-add (has->provides :npc npc)
-                                                                            loc-provides)}
+                                                                    loc-provides)}
                                                :chain '()
                                                :end   {:reqs (get-in npc [:busy :reqs])}}])
-          (assoc-in [:busy :thinking] 1))
+          (assoc-in [:busy :thinking] 1)
+          (update :busy dissoc :reqs))
 
       ; take first n options
       ;   incomplete?
@@ -704,8 +705,80 @@
   npc
   )
 
-(defn make-progress [npc locs]
+
+(defn find-quantities
+  "list all paths to quantities of the item-id"
+  [x item-id]
+  (cond
+    (= (:id x) item-id) [[(or (:quantity x) 1)]]
+    (:has x) (mapcat (fn [item idx]
+                       (map #(cons idx %) (find-quantities item item-id))) (:has x) (range))
+    :else []))
+
+(defn consume [x item-id quantity]
+  (let [paths (find-quantities x item-id)]
+    (println paths)
+    (loop [x x
+           quantity-to-consume quantity
+           [path & paths] paths]
+        (if (pos? quantity-to-consume)
+          (when path                                        ; TODO: else exception?
+            (let [quantity-available (last path)
+                  remainder (- quantity-available quantity-to-consume)
+                  x-path (interleave (repeat :has) (butlast path))]
+              (if (pos? remainder)
+                (assoc-in x (concat x-path [:quantity]) remainder)
+                (recur
+                  (assoc-in x x-path nil)
+                  (- remainder)
+                  paths))))
+          x))))
+
+(defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
+  (if (= npc-loc :npc)
+    [(consume npc item quantity) locs]
+    [npc (update locs (:location npc) #(consume % item quantity))]))
+
+(defn begin-step [[npc locs]]
+  ; TODO: in progress
+  (let [[step & todo] (:todo (:busy npc))
+        consumes (:consumes step)]
+
+    (reduce-kv step-consume [npc locs] consumes)
+
+    (-> npc
+        (update :busy assoc :doing step)
+        (update :busy update :todo todo)))
+
+  )
+
+(defn make-progress [[npc locs]]
+
   (println "doing stuff!")
+  ; consume
+  ; tick, tick, tick
+  ; provide
+
+  ; todo, but no doing -> move next todo onto doing and consume!
+  ; doing, but ticks left -> tick
+  ; doing, no ticks left -> provide
+  ; no todo left -> remove todo
+
+  (let [{:keys [todo doing] :as busy} (:busy npc)]
+    ; TODO: in progress
+    (cond
+      (and todo (not doing)) (begin-step [npc locs])
+
+      ;(pos? (:ticks doing)) ;? (dec ticks)?
+
+      ;(and doing (zero? (:ticks doing)))                    ;? provide
+
+      ;(not todo) ;? done!!!
+
+      )
+
+    )
+
   )
 
 (defn try-to-choose-an-option [npc]
@@ -713,7 +786,9 @@
         best-option-so-far (-> npc :busy :options first)
         thought (-> best-option-so-far :score :thought)]
     (if (> thinking (+ thought 3))
-      (assoc-in npc [:busy :todo] (:chain best-option-so-far))
+      (-> npc
+          (assoc-in [:busy :todo] (:chain best-option-so-far))
+          (dissoc :options :thinking))
       npc)))
 
 (defn choose-greatest-need [npc]
@@ -723,13 +798,13 @@
                                    (take-last 1)
                                    (into {}))))
 
-(defn algorithm [npc locs]
+(defn algorithm [[npc locs :as npc-locs]]
 
 
   (cond
-    (-> npc :busy :todo) (make-progress npc locs)
-    (-> npc :busy :reqs) (try-to-choose-an-option (grow-options npc locs))
-    :else (choose-greatest-need npc))
+    (-> npc :busy :todo) (make-progress npc-locs)
+    (-> npc :busy :reqs) [(try-to-choose-an-option (grow-options npc-locs)) locs]
+    :else [(choose-greatest-need npc) locs])
 
 
   ;(let [busy (:busy npc)]
