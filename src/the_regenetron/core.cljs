@@ -714,7 +714,7 @@
 
 (defn remove-hasnts [node]
   (if-let [has (:has node)]
-    (assoc node :has (map remove-hasnts (remove nil? has)))
+    (assoc node :has (mapv remove-hasnts (remove nil? has)))
     node))
 
 (defn find-quantities
