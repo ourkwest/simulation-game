@@ -268,7 +268,9 @@
 (defn merge-remove [a b]
   (apply dissoc a (keys b)))
 
-(defn has->provides [npc-loc thing]
+(defn has->provides
+  "Traverses the :has tree for a node and builds a map of what it provides."
+  [npc-loc thing]
   ;(println 'has->provides)
 
   (let [children (:has thing)
@@ -706,6 +708,11 @@
   )
 
 
+
+(defn refresh-provides [node npc-loc]
+  (println 'refresh-provides)
+  (assoc node :provides (has->provides npc-loc node)))
+
 (defn find-quantities
   "list all paths to quantities of the item-id"
   [x item-id]
@@ -715,14 +722,13 @@
                        (map #(cons idx %) (find-quantities item item-id))) (:has x) (range))
     :else []))
 
-(defn consume [x item-id quantity]
-  (let [paths (find-quantities x item-id)]
-    (println paths)
-    (loop [x x
+(defn consume [node item-id quantity]
+  (let [paths (find-quantities node item-id)]
+    (loop [x node
            quantity-to-consume quantity
            [path & paths] paths]
         (if (pos? quantity-to-consume)
-          (when path                                        ; TODO: else exception?
+          (if path                                        ; TODO: else exception?
             (let [quantity-available (last path)
                   remainder (- quantity-available quantity-to-consume)
                   x-path (interleave (repeat :has) (butlast path))]
@@ -731,55 +737,63 @@
                 (recur
                   (assoc-in x x-path nil)
                   (- remainder)
-                  paths))))
+                  paths)))
+            (assoc x :error :not-enough-stuff!))            ; error, but return having made the progress we've made
           x))))
 
 (defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
+  (println 'step-consume)
   (if (= npc-loc :npc)
     [(consume npc item quantity) locs]
     [npc (update locs (:location npc) #(consume % item quantity))]))
 
 (defn begin-step [[npc locs]]
-  ; TODO: in progress
+  (println 'begin-step)
   (let [[step & todo] (:todo (:busy npc))
-        consumes (:consumes step)]
+        consumes (:consumes step)
+        [npc locs] (reduce-kv step-consume [npc locs] consumes)]
+    (println 'begin-step_1)
+    [(-> npc
+         (update :busy assoc :doing step)
+         (update :busy assoc :todo todo))
+     (update locs (:location npc) #(refresh-provides % :loc))]))
 
-    (reduce-kv step-consume [npc locs] consumes)
+(defn tick-step [[npc locs]]
+  [(update-in npc [:busy :doing :ticks] dec) locs])
 
-    (-> npc
-        (update :busy assoc :doing step)
-        (update :busy update :todo todo)))
+(defn provide [node item-id v]
+  (update node :has conj (assoc v :id item-id)))
 
-  )
+(defn step-provide [[npc locs] [npc-loc item] v]
+  (if (= npc-loc :npc)
+    [(provide npc item v) locs]
+    [npc (update locs (:location npc) #(provide % item v))]))
+
+(defn end-step [[npc locs]]
+  (let [step (:doing (:busy npc))
+        provides (:provides step)
+        [npc locs] (reduce-kv step-provide [npc locs] provides)]
+    [(update npc :busy dissoc :doing)
+     (update locs (:location npc) #(refresh-provides % :loc))]))
+
+(defn steps-completed [[npc locs]]
+  [(update npc dissoc :busy) locs])
 
 (defn make-progress [[npc locs]]
 
-  (println "doing stuff!")
+  ;TODO: this leaves nils in :has trees!!!
+  ;TODO: :food, :drink etc. get added to :has tree, not removed from :reqs
+  
   ; consume
   ; tick, tick, tick
   ; provide
 
-  ; todo, but no doing -> move next todo onto doing and consume!
-  ; doing, but ticks left -> tick
-  ; doing, no ticks left -> provide
-  ; no todo left -> remove todo
-
-  (let [{:keys [todo doing] :as busy} (:busy npc)]
-    ; TODO: in progress
+  (let [{:keys [todo doing]} (:busy npc)]
     (cond
       (and todo (not doing)) (begin-step [npc locs])
-
-      ;(pos? (:ticks doing)) ;? (dec ticks)?
-
-      ;(and doing (zero? (:ticks doing)))                    ;? provide
-
-      ;(not todo) ;? done!!!
-
-      )
-
-    )
-
-  )
+      (pos? (:ticks doing)) (tick-step [npc locs])
+      (and doing (zero? (:ticks doing))) (end-step [npc locs])
+      (not todo) (steps-completed [npc locs]))))
 
 (defn try-to-choose-an-option [npc]
   (let [thinking (-> npc :busy :thinking)
@@ -802,7 +816,8 @@
 
 
   (cond
-    (-> npc :busy :todo) (make-progress npc-locs)
+    (or (-> npc :busy :doing)
+        (-> npc :busy :todo)) (make-progress npc-locs)
     (-> npc :busy :reqs) [(try-to-choose-an-option (grow-options npc-locs)) locs]
     :else [(choose-greatest-need npc) locs])
 
