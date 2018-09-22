@@ -710,8 +710,12 @@
 
 
 (defn refresh-provides [node npc-loc]
-  (println 'refresh-provides)
   (assoc node :provides (has->provides npc-loc node)))
+
+(defn remove-hasnts [node]
+  (if-let [has (:has node)]
+    (assoc node :has (map remove-hasnts (remove nil? has)))
+    node))
 
 (defn find-quantities
   "list all paths to quantities of the item-id"
@@ -744,8 +748,8 @@
 (defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
   (println 'step-consume)
   (if (= npc-loc :npc)
-    [(consume npc item quantity) locs]
-    [npc (update locs (:location npc) #(consume % item quantity))]))
+    [(remove-hasnts (consume npc item quantity)) locs]
+    [npc (update locs (:location npc) #(remove-hasnts (consume % item quantity)))]))
 
 (defn begin-step [[npc locs]]
   (println 'begin-step)
@@ -781,9 +785,8 @@
 
 (defn make-progress [[npc locs]]
 
-  ;TODO: this leaves nils in :has trees!!!
   ;TODO: :food, :drink etc. get added to :has tree, not removed from :reqs
-  
+
   ; consume
   ; tick, tick, tick
   ; provide
