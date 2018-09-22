@@ -766,7 +766,10 @@
   [(update-in npc [:busy :doing :ticks] dec) locs])
 
 (defn provide [node item-id v]
-  (update node :has conj (assoc v :id item-id)))
+  (let [quantity-required (:quantity (get (:reqs node) [:npc item-id]))]
+    (if quantity-required
+      (update-in node [:reqs [:npc item-id] :quantity] - (:quantity v))
+      (update node :has conj (assoc v :id item-id)))))
 
 (defn step-provide [[npc locs] [npc-loc item] v]
   (if (= npc-loc :npc)
