@@ -316,6 +316,11 @@
      ;               :has [2 3 4]}
      ;            }
 
+     :story  [{:html [:h1 "Welcome to The Regenetron"]}
+              {:html [:p "A paragraph of epic introductory text..."]}
+              {:html [:p "~"]}
+              {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
+
      :locations {:north-borders {:id  :north-borders
                                  :has [{:id  :berry-bush
                                         :has [{:id :berry}
@@ -345,7 +350,8 @@
 
                  } ;TODO: pre-calculate per frame? on change? recursive :has
 
-     :people    {:some-id? {:reqs        (merge
+     :people    {:some-id? {:name        "Ada"
+                            :reqs        (merge
                                            default-npc-reqs
                                            {[:npc :food]  {:quantity 100} ; TODO: should these be negative?
                                             [:npc :drink] {:quantity 50}
@@ -788,8 +794,6 @@
 
 (defn make-progress [[npc locs]]
 
-  ;TODO: :food, :drink etc. get added to :has tree, not removed from :reqs
-
   ; consume
   ; tick, tick, tick
   ; provide
@@ -808,7 +812,7 @@
     (if (> thinking (+ thought 3))
       (-> npc
           (assoc-in [:busy :todo] (:chain best-option-so-far))
-          (dissoc :options :thinking))
+          (update :busy dissoc :options :thinking))
       npc)))
 
 (defn choose-greatest-need [npc]
@@ -843,6 +847,28 @@
   )
 
 
+(defn describe-npc [npc]
+
+  (let [thinking (-> npc :busy :thinking)
+        doing (-> npc :busy :doing)
+        todo (-> npc :busy :todo)
+        actions (remove nil? (cons doing todo))]
+
+    (string/join
+      ", "
+      (remove nil? [(:name npc)
+                    (when thinking (str "thinking for " thinking))
+                    (when (seq actions) (str "doing: (" (->> actions (map :name) (string/join ", ")) ")"))
+                    (str "needs: ("
+                         (string/join ", "
+                           (for [[[_ k] {:keys [quantity]}] (:reqs npc)]
+                             (str quantity " " (name k))))
+                         ")")]))
+
+    )
+
+  )
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;                   ;;;;
 ;;;;    Game state     ;;;;
@@ -850,37 +876,39 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; defonce
-(def state (atom {:story [{:html [:h1 "Welcome to The Regenetron"]}
-                          {:html [:p "A paragraph of epic introductory text..."]}
-                          {:html [:p "~"]}
-                          {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
-                  :actors [{:name  "Ada Lovelace"
-                            :needs {:drink  57
-                                    :food  100
-                                    :sleep 123
-                                    }
-                            :location :beach
-                            :has #{}
-                            :abode :adas-house}]
-                  :pc     {:location :beach}
-                  ;:people {:player {:location :beach
-                  ;                 :actions  [{:id    1
-                  ;                             :label "look around"}
-                  ;                            {:id    2
-                  ;                             :label "head into the village"}]}}
-                  :time 0
-                  :world {:places {:beach     {:people [:player]
-                                               :things [:coconut]}
-                                   :village-0 {:people []
-                                               :things []}}}
 
-                  }))
+(comment
+  (def state (atom {:story  [{:html [:h1 "Welcome to The Regenetron"]}
+                             {:html [:p "A paragraph of epic introductory text..."]}
+                             {:html [:p "~"]}
+                             {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
+                    :actors [{:name     "Ada Lovelace"
+                              :needs    {:drink 57
+                                         :food  100
+                                         :sleep 123
+                                         }
+                              :location :beach
+                              :has      #{}
+                              :abode    :adas-house}]
+                    :pc     {:location :beach}
+                    ;:people {:player {:location :beach
+                    ;                 :actions  [{:id    1
+                    ;                             :label "look around"}
+                    ;                            {:id    2
+                    ;                             :label "head into the village"}]}}
+                    :time   0
+                    :world  {:places {:beach     {:people [:player]
+                                                  :things [:coconut]}
+                                      :village-0 {:people []
+                                                  :things []}}}
 
-(defn actions [{:keys [people world]}]
+                    }))
 
-  (let []) (-> people :player :location)
+  (defn actions [{:keys [people world]}]
 
-  )
+    (let []) (-> people :player :location)
+
+    ))
 
 (comment "actor data model:"
          ; angst = combination (sum?) of all need values
@@ -902,33 +930,51 @@
 
          )
 
-(defn age-actor [needs]
-  (-> needs
-      (update :drink #(+ % 3))
-      (update :food #(+ % 1))
-      (update :sleep #(+ % 1))))
+(comment
+  (defn age-actor [needs]
+    (-> needs
+        (update :drink #(+ % 3))
+        (update :food #(+ % 1))
+        (update :sleep #(+ % 1))))
 
-(defn tick-actor [{:keys [needs task] :as actor}]
-
-
-  (assoc actor :needs (age-actor needs))
+  (defn tick-actor [{:keys [needs task] :as actor}]
 
 
-  ; if actor has a task in progress then continue task
-  ; actor
-  ;   task
-  ;     step in progress, remaining ticks
-  ;     remaining: step, step, step
+    (assoc actor :needs (age-actor needs))
 
-  ; if actor has no task in progress, then make a plan
-  ;   determine greatest need
-  ;   select possible actions that meet need
-  ;     cost them, and pick the cheapest
 
-  )
+    ; if actor has a task in progress then continue task
+    ; actor
+    ;   task
+    ;     step in progress, remaining ticks
+    ;     remaining: step, step, step
+
+    ; if actor has no task in progress, then make a plan
+    ;   determine greatest need
+    ;   select possible actions that meet need
+    ;     cost them, and pick the cheapest
+
+    ))
+
+
+(defn tick-npcs [{:keys [people locations] :as game-state}]
+  (let [[npcs locs]
+        (reduce
+          (fn [[npcs locs] npc-key]
+            (let [this-npc (npc-key npcs)
+                  [this-npc' locs'] (algorithm [this-npc locs])]
+              [(assoc npcs npc-key this-npc') locs']))
+          [people locations]
+          (keys people))]
+    (assoc game-state :people npcs
+                      :locations locs)))
 
 (defn tick []
-  (println "Hello"))
+  (println "Hello")
+
+  (swap! game-state tick-npcs)
+
+  )
 
 (defn render-story [{:keys [story]}]
   (into [:div] (map :html story)))
@@ -944,7 +990,8 @@
     [:br]
     [:span "Tiredness: " [:b "10% "]]
     [:br]
-    [:span "Location: " [:b (-> pc :location name)] " "]]
+    ;[:span "Location: " [:b (-> pc :location name)] " "]
+    ]
 
    [:div {:style {:display "inline-block"
                   :margin "10px"}}
@@ -964,11 +1011,23 @@
 
   )
 
+(defn render-npcs [state]
+  (for [[_ npc] (:people state)]
+    [:div (describe-npc npc)]))
+
+(defn render-locs [state]
+  (for [[_ loc] (:locations state)]
+    [:div
+     (name (:id loc))
+     (str (:provides loc))]))
+
 (defn render []
-  (let [state @state]
+  (let [state @game-state]
     [:div
      (render-story state)
-     (render-controls state)]))
+     (render-controls state)
+     (render-npcs state)
+     (render-locs state)]))
 
 (reagent/render-component [render] (. js/document (getElementById "app")))
 
