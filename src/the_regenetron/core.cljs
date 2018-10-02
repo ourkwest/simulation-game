@@ -384,6 +384,23 @@
        (fn [loc]
          (assoc loc :provides (has->provides :loc loc))))
 
+(defn palette [input]
+  (let [[r g b] (cycle (re-seq #"\d{3}" (str (hash input))))
+        r (mod (js/parseInt r) 128)
+        g (mod (js/parseInt g) 128)
+        b (mod (js/parseInt b) 128)]
+    {:light (str "rgb(" (+ r 128) \, (+ g 128) \, (+ b 128) ")")
+     :dark  (str "rgb(" r \, g \, b ")")}))
+
+(defn has-palette [node]
+  (-> node
+      (assoc :palette (palette (or (:name node) (:id node) "")))
+      (update :has #(mapv has-palette %))))
+
+(swap! game-state update :people mapvals has-palette)
+
+(swap! game-state update :locations mapvals has-palette)
+
 ;(def object-locations
 ;  (atom
 ;    {:north-borders [5]}))
@@ -809,7 +826,24 @@
   (let [thinking (-> npc :busy :thinking)
         best-option-so-far (-> npc :busy :options first)
         thought (-> best-option-so-far :score :thought)]
-    (if (> thinking (+ thought 3))
+
+    (cond
+      (and (> thinking (+ thought 3))
+           (:complete best-option-so-far))
+      (-> npc
+          (assoc-in [:busy :todo] (:chain best-option-so-far))
+          (update :busy dissoc :options :thinking))
+
+      (> thinking (+ thought 10))
+      (do
+        (println (:name npc) "is stuck!!!")
+        (assoc npc :stuck true))
+
+      :else
+      npc)
+
+    (if (and (> thinking (+ thought 3))
+             (:complete best-option-so-far))
       (-> npc
           (assoc-in [:busy :todo] (:chain best-option-so-far))
           (update :busy dissoc :options :thinking))
@@ -854,16 +888,35 @@
         todo (-> npc :busy :todo)
         actions (remove nil? (cons doing todo))]
 
-    (string/join
-      ", "
-      (remove nil? [(:name npc)
-                    (when thinking (str "thinking for " thinking))
-                    (when (seq actions) (str "doing: (" (->> actions (map :name) (string/join ", ")) ")"))
-                    (str "needs: ("
-                         (string/join ", "
-                           (for [[[_ k] {:keys [quantity]}] (:reqs npc)]
-                             (str quantity " " (name k))))
-                         ")")]))
+    [:span
+     [:span
+      {:style {:background-color (-> npc :palette :light)}}
+      (:name npc)]
+
+     (when thinking
+       [:span {:style {:background-color "rgb(100,150,255)"}}
+        (str "thinking for " thinking)])
+
+     (when (seq actions)
+       [:span {:style {:background-color "rgb(100,250,155)"}}
+        (str "doing: " (->> actions (map :name) (string/join ", ")))])
+
+     [:span {:style {:background-color "rgb(255,200,55)"}}
+      (str "needs: "
+           (string/join ", "
+             (for [[[_ k] {:keys [quantity]}] (:reqs npc)]
+               (str quantity " " (name k)))))]]
+
+    ;(string/join
+    ;  ", "
+    ;  (remove nil? [(:name npc)
+    ;                (when thinking (str "thinking for " thinking))
+    ;                (when (seq actions) (str "doing: (" (->> actions (map :name) (string/join ", ")) ")"))
+    ;                (str "needs: ("
+    ;                     (string/join ", "
+    ;                       (for [[[_ k] {:keys [quantity]}] (:reqs npc)]
+    ;                         (str quantity " " (name k))))
+    ;                     ")")]))
 
     )
 
@@ -1011,15 +1064,64 @@
 
   )
 
+(defn render-has [node]
+  (into
+    [:div
+     {:style {:border           (str "2px solid " (-> node :palette :dark))
+              :border-radius    "7px"
+              :background-color (-> node :palette :light)
+              :color            (-> node :palette :dark)
+              :display          "inline-block"
+              :margin          "3px"}}
+     [:div
+      {:style {:display "inline-block"
+               :padding "3px"}}
+      (or (:name node) (:id node))
+      (when-let [q (:quantity node)]
+        (str " x " q))]]
+    (map render-has (:has node))))
+
+(defn reqs->has [node]
+  (update node :has conj (has-palette {:id      :needs
+                                       :has     (for [[[_ k] {:keys [quantity]}] (:reqs node)]
+                                                  {:id       k
+                                                   :quantity quantity})})))
+
+(defn thinking->has [node]
+  (if-let [t (-> node :busy :thinking)]
+    (update node :has conj (has-palette {:id       :thinking
+                                         :quantity t}))
+    node))
+
+(defn doing->has [node]
+  (let [t (-> node :busy :todo)
+        d (-> node :busy :doing)
+        actions (remove nil? (cons d t))]
+    (if (seq actions)
+      (update node :has conj (has-palette {:id       :doing
+                                           :has (for [action actions]
+                                                  {:id       (:name action)})}))
+      node)))
+
+;TODO: render stuck!!!
+
 (defn render-npcs [state]
   (for [[_ npc] (:people state)]
-    [:div (describe-npc npc)]))
+    [:div {:key (str (random-uuid))
+           ;:style {:padding          "3px"}
+           }
+     (-> npc
+         reqs->has
+         thinking->has
+         doing->has
+         render-has)]))
 
 (defn render-locs [state]
   (for [[_ loc] (:locations state)]
-    [:div
-     (name (:id loc))
-     (str (:provides loc))]))
+    [:div {:key (str (random-uuid))
+           ;:style {:padding          "3px"}
+           }
+     (render-has loc)]))
 
 (defn render []
   (let [state @game-state]
