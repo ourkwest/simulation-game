@@ -840,13 +840,6 @@
         (assoc npc :stuck true))
 
       :else
-      npc)
-
-    (if (and (> thinking (+ thought 3))
-             (:complete best-option-so-far))
-      (-> npc
-          (assoc-in [:busy :todo] (:chain best-option-so-far))
-          (update :busy dissoc :options :thinking))
       npc)))
 
 (defn choose-greatest-need [npc]
@@ -1103,24 +1096,26 @@
                                                   {:id       (:name action)})}))
       node)))
 
-;TODO: render stuck!!!
+(defn stuck->has [node]
+  (if (:stuck node)
+    (update node :has conj {:id :STUCK!!!
+                            :palette {:dark "rgb(255,255,0)"
+                                      :light "rgb(150,0,0)"}})
+    node))
 
 (defn render-npcs [state]
   (for [[_ npc] (:people state)]
-    [:div {:key (str (random-uuid))
-           ;:style {:padding          "3px"}
-           }
+    [:div {:key (str (random-uuid))}
      (-> npc
          reqs->has
          thinking->has
          doing->has
+         stuck->has
          render-has)]))
 
 (defn render-locs [state]
   (for [[_ loc] (:locations state)]
-    [:div {:key (str (random-uuid))
-           ;:style {:padding          "3px"}
-           }
+    [:div {:key (str (random-uuid))}
      (render-has loc)]))
 
 (defn render []
