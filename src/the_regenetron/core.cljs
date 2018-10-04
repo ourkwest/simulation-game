@@ -579,10 +579,10 @@
                        (merge-add (:requires step) (:consumes step))
                        (merge-remove (:provides step)))
 
-          _ (println '(keys new-reqs) (keys new-reqs))
-          _ (println (-> start :provides keys set))
+          ;_ (println '(keys new-reqs) (keys new-reqs))
+          ;_ (println (-> start :provides keys set))
           complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))
-          _ (println complete?)
+          ;_ (println complete?)
           ]
       (-> option
           (update :chain conj (assoc step :complete complete?
@@ -593,7 +593,7 @@
 
 (defn prepend-steps [{:keys [start chain end] :as option} npc locs]
   ;(println "prepend-steps")
-  (let [reqs (or (some-> chain last :reqs) (:reqs end))
+  (let [reqs (or (some-> chain first :reqs) (:reqs end))
         ;reqs (reduce find-requirements (-> end :consumes keys set) chain)
         ;_ (println 1)
         ;_ (println '(keys reqs) (keys reqs))
@@ -769,17 +769,17 @@
           x))))
 
 (defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
-  (println 'step-consume)
+  ;(println 'step-consume)
   (if (= npc-loc :npc)
     [(remove-hasnts (consume npc item quantity)) locs]
     [npc (update locs (:location npc) #(remove-hasnts (consume % item quantity)))]))
 
 (defn begin-step [[npc locs]]
-  (println 'begin-step)
+  ;(println 'begin-step)
   (let [[step & todo] (:todo (:busy npc))
         consumes (:consumes step)
         [npc locs] (reduce-kv step-consume [npc locs] consumes)]
-    (println 'begin-step_1)
+    ;(println 'begin-step_1)
     [(-> npc
          (update :busy assoc :doing step)
          (update :busy assoc :todo todo))
@@ -1016,7 +1016,7 @@
                       :locations locs)))
 
 (defn tick []
-  (println "Hello")
+  ;(println "Hello")
 
   (swap! game-state tick-npcs)
 
@@ -1051,6 +1051,14 @@
      [:input {:type "button"
               :value "Tick!"
               :on-click tick}]
+
+     [:input {:type     "button"
+              :value    "Tick! (x5)"
+              :on-click #(do (tick)
+                             (tick)
+                             (tick)
+                             (tick)
+                             (tick))}]
      ]]
 
    ]
