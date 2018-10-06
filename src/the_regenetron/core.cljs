@@ -8,7 +8,8 @@
 
 (println "This text is printed from src/the-regenetron/core.cljs. Go ahead and edit it and see reloading in action.")
 
-
+; TODO XXX BUGS:
+;   thinking continues once stuck? stuck not displayed
 
 ;; TODO:
 ;;  * make npc algorithm handle movement around the map
@@ -110,56 +111,30 @@
    [:village-2 "the village"                   12 17 "the North Borders"   :north-borders]
    ])
 
-(defn make-links [links]
-  (into {}
-        (for [[a _ _ ->b-ticks ->b-label b] links]
-          (do
-            (when-not (places a) (println "UNKNOWN PLACE" a))
-            (when-not (places b) (println "UNKNOWN PLACE" b))
-            [a [{:to    b
-                 :label ->b-label
-                 :ticks ->b-ticks}]]))))
+(def bi-links (set (concat raw-links (map reverse raw-links))))
 
-(def links
-  (merge-with (comp vec concat)
-              (make-links raw-links)
-              (make-links (map reverse raw-links))))
+(defn all-paths-from [from bi-links to]
+  (for [[link-from _ _ ticks description link-to :as this-link] bi-links :when (= link-from from)
+        child-path (if (= link-to to)
+                     [nil]
+                     (all-paths-from link-to (disj bi-links this-link) to))]
+    (cons {:ticks       ticks
+           :description description
+           :from        link-from
+           :to          link-to} child-path)))
 
-(println links)
+(defn find-best-route [[from to]]
+  (->> (all-paths-from from bi-links to)
+       (map (fn [path]
+              {:path  path
+               :ticks (transduce (map :ticks) + 0 path)}))
+       (apply min-key :ticks)))
 
-(comment
-
-  (def raw-steps
-    [
-     [:drink-water #{:water-at-hand} 1 #{:less-thirst}]
-     [:draw-water #{:well} 3 #{:water-at-hand}]
-     [:eat-berries #{:berries-in-hand} 1 #{:less-hunger}]
-     [:pick-berries #{:berry-bushes} 3 #{:berries-in-hand}]
-     ])
-
-  (def tasks
-
-    ; should always(?) be possible to move to any of the places
-    ;
-    )
-
-  (def need-multipliers                                     ; unnecesary? we can control the rate of change in both directions
-    {:drink 1000
-     :sleep 100
-     :food  100}))
-
-;(def objects
-;  (atom
-;    {100 {:desc "North Borders"
-;          :has  [5]}
-;
-;     1 {:desc "axe"}
-;     2 {:desc "berry"}
-;     3 {:desc "berry"}
-;     4 {:desc "berry"}
-;     5 {:desc "berry bush"
-;        :has  [2 3 4]}
-;     }))
+(def routes
+  (into {} (for [from (keys places)
+                 to (keys places)
+                 :when (not= from to)]
+             [[from to] (find-best-route [from to])])))
 
 ; TODO: =======================================================
 ; {[:loc :id] {details...}
@@ -271,28 +246,13 @@
 (defn has->provides
   "Traverses the :has tree for a node and builds a map of what it provides."
   [npc-loc thing]
-  ;(println 'has->provides)
-
   (let [children (:has thing)
         children-maps (for [child children]
                        {[npc-loc (:id child)] (dissoc child :id)})]
     (apply merge-add
       (concat children-maps
               (when (seq children)
-                (map (partial has->provides npc-loc) children)))))
-
-  ;(let [children (:has thing)
-  ;      children-ids (map #(vector npc-loc (:id %)) children)]
-  ;  (distinct
-  ;    (concat
-  ;      children-ids
-  ;      (when (seq children)
-  ;        (mapcat (partial has->provides npc-loc) children)))))
-
-  ; TODO
-  ;convert what teh npc :has (recursively) to a map of what they can provide
-  ;{:provides {:at :berry-bushes}}
-  )
+                (map (partial has->provides npc-loc) children))))))
 
 (def npc-needs [[:npc :food]
                 [:npc :drink]
@@ -433,7 +393,7 @@
       (get provides item-key))
     (:known-steps npc)))
 
-(defn synthetic-steps-providing [locs [npc-loc item-id]]
+(defn synthetic-steps-providing [loc-key locs [npc-loc item-id]]
   (if (= npc-loc :npc)
     (when-not (abstract item-id)
       [{:name     (str "take " (name item-id))
@@ -441,14 +401,22 @@
         :provides {[:npc item-id] {:quantity 1}}
         :consumes {[:loc item-id] {:quantity 1}}}])
     (for [[loc-id loc] locs :when (-> loc :provides (get [:loc item-id]))]
-      {:name     (str "go to " (name (:id loc)))            ; better!
-       :ticks    5                                             ; calculate!
-       :provides (:provides loc)})))                        ;TODO: needs to be {[:loc :id] quantity} !!!
+      (let [route (routes [loc-key loc-id])]
+        {:name        (str "go to " (-> places (:id loc) :label))
+         :ticks       (:ticks route)
+         :provides    (:provides loc)
+         :sub-steps   (map (fn [{:keys [ticks description from to]}]
+                             {:name (str "go to " description)
+                              :ticks ticks
+                              :from from
+                              :to to})
+                           (:path route))
+         }))))                        ;OLD TODO: needs to be {[:loc :id] quantity} !!!
 
 (defn steps-providing [npc locs item-key]
   (concat
     (fixed-steps-providing npc item-key)
-    (synthetic-steps-providing locs item-key)))
+    (synthetic-steps-providing (:location npc) locs item-key)))
 
 ;(def verbs
 ;  [
@@ -802,8 +770,11 @@
 (defn end-step [[npc locs]]
   (let [step (:doing (:busy npc))
         provides (:provides step)
+        new-location (:to step)
         [npc locs] (reduce-kv step-provide [npc locs] provides)]
-    [(update npc :busy dissoc :doing)
+    [(-> npc
+         (update :busy dissoc :doing)
+         (update :location #(or new-location %)))
      (update locs (:location npc) #(refresh-provides % :loc))]))
 
 (defn steps-completed [[npc locs]]
@@ -822,6 +793,9 @@
       (and doing (zero? (:ticks doing))) (end-step [npc locs])
       (not todo) (steps-completed [npc locs]))))
 
+(defn flatten-chain [chain]
+  (mapcat #(or (:sub-steps %) [%]) chain))
+
 (defn try-to-choose-an-option [npc]
   (let [thinking (-> npc :busy :thinking)
         best-option-so-far (-> npc :busy :options first)
@@ -831,7 +805,7 @@
       (and (> thinking (+ thought 3))
            (:complete best-option-so-far))
       (-> npc
-          (assoc-in [:busy :todo] (:chain best-option-so-far))
+          (assoc-in [:busy :todo] (flatten-chain (:chain best-option-so-far)))
           (update :busy dissoc :options :thinking))
 
       (> thinking (+ thought 10))
@@ -1078,6 +1052,8 @@
       {:style {:display "inline-block"
                :padding "3px"}}
       (or (:name node) (:id node))
+      (when-let [l (-> node :location places :label)]
+        (str " at " l))
       (when-let [q (:quantity node)]
         (str " x " q))]]
     (map render-has (:has node))))
