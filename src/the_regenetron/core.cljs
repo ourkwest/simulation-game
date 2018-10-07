@@ -8,9 +8,6 @@
 
 (println "This text is printed from src/the-regenetron/core.cljs. Go ahead and edit it and see reloading in action.")
 
-; TODO XXX BUGS:
-;   thinking continues once stuck? stuck not displayed
-
 ;; TODO:
 ;;  * make npc algorithm handle movement around the map
 ;;  * make npc algorithm act as well as plan!
@@ -601,7 +598,7 @@
                                                                     loc-provides)}
                                                :chain '()
                                                :end   {:reqs (get-in npc [:busy :reqs])}}])
-          (assoc-in [:busy :thinking] 1)
+          (update-in [:busy :thinking] inc)
           (update :busy dissoc :reqs))
 
       ; take first n options
