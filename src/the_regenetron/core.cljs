@@ -82,22 +82,29 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;TODO: is every npc going to have it's own map as well as the world having territory?
-(def places {:beach {:label "the beach"}
+(def places {:beach {:label "the beach"
+                     :id  :beach
+                     :has [{:id  :palm-tree
+                            :has [{:id       :berry
+                                   :quantity 5}]}]}
              :village-0 {:label  "the centre of the village"
-                         :has #{:well}}
-             :village-1 {:label  "the South side of the village"}
-             :village-2 {:label  "the North side of the village"}
+                         :id :village-0
+                         :has [{:id :well}]
+                         }
+             :village-1 {:label  "the South side of the village"
+                         :id :village-1}
+             :village-2 {:label  "the North side of the village"
+                         :id :village-2}
              :village-3 {:label  "the East side of the village"
-                         :has #{:ada's-house}}
+                         :id :village-3}
              :village-4 {:label  "the West side of the village"
-                         :has #{:player's-house}}
+                         :id :village-4}
              :north-borders {:label  "the North Borders"
-                             ;:object 100
-                             ;:has {:id  :berry-bushes       ; TODO: not :has here, because :has is mutable
-                             ;      :has [{:id     :berries
-                             ;             :amount 100}]}
-                             }
-             })
+                             :id  :north-borders
+                             :has [{:id  :berry-bush
+                                    :has [{:id :berry}
+                                          {:id :berry}
+                                          {:id :berry}]}]}})
 
 (def raw-links
   [[:beach     "the beach"                     14 18 "the village"         :village-1]
@@ -278,53 +285,26 @@
               {:html [:p "~"]}
               {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
 
-     :locations {:north-borders {:id  :north-borders
-                                 :has [{:id  :berry-bush
-                                        :has [{:id :berry}
-                                              {:id :berry}
-                                              {:id :berry}]}]
+     :locations places
 
-                                 ; How much detail does :provides need?
-                                 ; maybe try just a list of ids for now?
-                                 ;:provides [{:id :berry-bush
-                                 ;            :has [{:id :berry}
-                                 ;                  {:id :berry}
-                                 ;                  {:id :berry}]}              ; derived from :has when :has changes
-                                 ;           {:id :berry}
-                                 ;           {:id :berry}
-                                 ;           {:id :berry}]
-
-                                 ;{[:loc :berry-bush] {:quantity 1}
-                                 ; [:loc :berry]      {:quantity 3}}
-                                 }
-                 :village-0     {:id  :village-0
-                                 :has [{:id :well}]}
-
-                 :beach         {:id  :beach
-                                 :has [{:id  :palm-tree
-                                        :has [{:id       :berry
-                                               :quantity 5}]}]}
-
-                 } ;TODO: pre-calculate per frame? on change? recursive :has
-
-     :people    {:some-id? {:name        "Ada"
-                            :reqs        (merge
-                                           default-npc-reqs
-                                           {[:npc :food]  {:quantity 100} ; TODO: should these be negative?
-                                            [:npc :drink] {:quantity 50}
-                                            [:npc :sleep] {:quantity 10}
-                                            [:npc :chat]  {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
-                                            })
-                            :has         [{:id       :water
-                                           :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
-                                          ;{:id       :berry
-                                          ; :quantity 5}            ; fifo queue when picking things up - hold limit
-                                          {:id  :bucket
-                                           :has [{:id       :water
-                                                  :quantity 50}]}]
-                            :known-steps steps
-                            :location    :beach
-                            :busy        nil}
+     :people    {:ada {:name        "Ada"
+                       :reqs        (merge
+                                      default-npc-reqs
+                                      {[:npc :food]  {:quantity 100} ; TODO: should these be negative?
+                                       [:npc :drink] {:quantity 50}
+                                       [:npc :sleep] {:quantity 10}
+                                       [:npc :chat]  {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
+                                       })
+                       :has         [{:id       :water
+                                      :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
+                                     ;{:id       :berry
+                                     ; :quantity 5}            ; fifo queue when picking things up - hold limit?
+                                     {:id  :bucket
+                                      :has [{:id       :water
+                                             :quantity 50}]}]
+                       :known-steps steps
+                       :location    :beach
+                       :busy        nil}
 
                  }
 
@@ -575,6 +555,10 @@
   ; TODO
   ; iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
   ;    eg. "drink water" * (min water-available drinking-needed)
+  ; OR
+  ; double pass
+  ;   wants 100 food -> wants 100 berries -> wants to take 100 berries -> there are 5 berries
+  ;   filled up by 5 <-  eat berry x 5   <-     take berry x 5         <- there are 5 berries
   (assoc option :optimised true)
   )
 
