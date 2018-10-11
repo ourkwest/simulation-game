@@ -512,17 +512,32 @@
           (reduce conj x step-consumes)
           (reduce disj x step-provides))))
 
+(defn get-maximum-desired
+  "What's the most it's worth doing this step?"
+  [step reqs]
+  (Math/ceil
+    (apply max
+      (for [[k provided-value] (:provides step)
+            :let [required-value (reqs k)]
+            :when required-value]
+        (/ (:quantity required-value)
+           (:quantity provided-value))))))
+
+(defn scale-quantities [has scale-factor]
+  (mapvals has (fn [value]
+                 (update value :quantity #(* (or % 1) scale-factor)))))
+
 (defn add-step-to [{:keys [start chain end] :as option} reqs]
   (fn [step]
     (let [
           ;_ (println step)
           ;new-reqs (find-requirements reqs step)
 
-
+          maximum-desired (get-maximum-desired step reqs)
 
           new-reqs (-> reqs
-                       (merge-add (:requires step) (:consumes step))
-                       (merge-remove (:provides step)))
+                       (merge-add (:requires step) (scale-quantities (:consumes step) maximum-desired))
+                       (merge-remove (scale-quantities (:provides step) maximum-desired)))
 
           ;_ (println '(keys new-reqs) (keys new-reqs))
           ;_ (println (-> start :provides keys set))
@@ -532,7 +547,7 @@
       (-> option
           (update :chain conj (assoc step :complete complete?
                                           :reqs new-reqs
-                                          :min 1
+                                          :ideal-n maximum-desired
                                           :n 1))
           (assoc :complete complete?)))))
 
@@ -551,16 +566,47 @@
         ]
     (mapv (add-step-to option reqs) useful-steps)))
 
+(defn get-maximum-available
+  "What's the most we can do this step?"
+  [step has]
+  ; for every thing required, what is the maximum number of times we could perform the step - min of those
+  ; require 3, provided 7, Math/floor
+  (Math/floor
+    (apply min
+      (for [[k required-value] (merge (:consumes step)
+                                      (:requires step))
+            :let [provided-value (has k {:quantity 0})]]
+        (/ (:quantity provided-value)
+           (:quantity required-value))))))
+
+; TODO: optimisation! - everything downstream of optimise must respect 'n'
+;  scoring of options
+;  doing of steps
+
 (defn optimise [option npc world]
-  ; TODO
+  ; OLD:
   ; iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
   ;    eg. "drink water" * (min water-available drinking-needed)
   ; OR
   ; double pass
   ;   wants 100 food -> wants 100 berries -> wants to take 100 berries -> there are 5 berries
   ;   filled up by 5 <-  eat berry x 5   <-     take berry x 5         <- there are 5 berries
-  (assoc option :optimised true)
-  )
+
+  (loop [has (-> option :start :provides)
+         optimised (assoc option :chain []
+                                 :optimised true)
+         [step & chain] (-> option :chain)]
+    (if step
+      (let [maximum-available (get-maximum-available step has)
+            maximum-desired (:ideal-n step)
+            n (min maximum-available maximum-desired)
+            new-has (-> has
+                        (merge-remove (scale-quantities (:consumes step) n))
+                        (merge-add (scale-quantities (:provides step) n)))]
+        (recur new-has
+               (update optimised :chain conj (assoc step :max-n maximum-available :n n))
+               chain))
+      optimised)))
 
 (defn consider-option [npc locs]
   (fn [{:keys [complete optimised] :as option}]
