@@ -547,8 +547,7 @@
       (-> option
           (update :chain conj (assoc step :complete complete?
                                           :reqs new-reqs
-                                          :ideal-n maximum-desired
-                                          :n 1))
+                                          :ideal-n maximum-desired))
           (assoc :complete complete?)))))
 
 (defn prepend-steps [{:keys [start chain end] :as option} npc locs]
@@ -583,6 +582,14 @@
 ;  scoring of options
 ;  doing of steps
 
+(defn multiply-quantities [parent-quantity {:keys [quantity ticks consumes provides sub-steps] :as step}]
+  (let [quantity (* parent-quantity quantity)]
+    (merge step
+      (when ticks {:ticks (* quantity ticks)})
+      (when consumes {:consumes (mapvals consumes #(update % :quantity * quantity))})
+      (when provides {:provides (mapvals provides #(update % :quantity * quantity))})
+      (when sub-steps {:sub-steps (map (partial multiply-quantities quantity) sub-steps)}))))
+
 (defn optimise [option npc world]
   ; OLD:
   ; iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
@@ -601,10 +608,11 @@
             maximum-desired (:ideal-n step)
             n (min maximum-available maximum-desired)
             new-has (-> has
-                        (merge-remove (scale-quantities (:consumes step) n))
-                        (merge-add (scale-quantities (:provides step) n)))]
+                      (merge-remove (scale-quantities (:consumes step) n))
+                      (merge-add (scale-quantities (:provides step) n)))
+            optimised-step (multiply-quantities 1 (assoc step :max-n maximum-available :quantity n))]
         (recur new-has
-               (update optimised :chain conj (assoc step :max-n maximum-available :n n))
+               (update optimised :chain conj optimised-step)
                chain))
       optimised)))
 
@@ -1104,7 +1112,8 @@
     (if (seq actions)
       (update node :has conj (has-palette {:id       :doing
                                            :has (for [action actions]
-                                                  {:id       (:name action)})}))
+                                                  {:id       (:name action)
+                                                   :quantity (:quantity action)})}))
       node)))
 
 (defn stuck->has [node]
