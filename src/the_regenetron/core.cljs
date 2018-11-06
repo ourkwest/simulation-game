@@ -1111,7 +1111,9 @@
       (when-let [l (-> node :location places :label)]
         (str " at " l))
       (when-let [q (:quantity node)]
-        (str " x " q))]]
+        (str " x " q))
+      (when-let [t (:ticks node)]
+        (str " (" t ")"))]]
     (map render-has (:has node))))
 
 (defn reqs->has [node]
@@ -1131,10 +1133,11 @@
         d (-> node :busy :doing)
         actions (remove nil? (cons d t))]
     (if (seq actions)
-      (update node :has conj (has-palette {:id       :doing
+      (update node :has conj (has-palette {:id  :doing
                                            :has (for [action actions]
                                                   {:id       (:name action)
-                                                   :quantity (:quantity action)})}))
+                                                   :quantity (:quantity action)
+                                                   :ticks    (:ticks action)})}))
       node)))
 
 (defn stuck->has [node]
