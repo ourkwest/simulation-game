@@ -379,16 +379,18 @@
         :consumes {[:loc item-id] {:quantity 1}}}])
     (for [[loc-id loc] locs :when (-> loc :provides (get [:loc item-id]))]
       (let [route (routes [loc-key loc-id])]
-        {:name        (str "go to " (-> places (:id loc) :label))
-         :ticks       (:ticks route)
-         :provides    (:provides loc)
-         :sub-steps   (map (fn [{:keys [ticks description from to]}]
-                             {:name (str "go to " description)
-                              :ticks ticks
-                              :from from
-                              :to to})
-                           (:path route))
-         }))))                        ;OLD TODO: needs to be {[:loc :id] quantity} !!!
+        {:name       (str "go to " (-> places (:id loc) :label))
+         :ticks      (:ticks route)
+         :provides   (:provides loc)
+         :idempotent true
+         :sub-steps  (map (fn [{:keys [ticks description from to]}]
+                            {:name       (str "go to " description)
+                             :ticks      ticks
+                             :idempotent true
+                             :from       from
+                             :to         to})
+                          (:path route))})))) ;OLD TODO: needs to be {[:loc :id] quantity} !!!
+
 
 (defn steps-providing [npc locs item-key]
   (concat
@@ -500,8 +502,7 @@
       (assoc option :score {:cost    cost
                             :benefit benefit
                             :value   (float (/ benefit cost))
-                            :thought (when (:optimised option) (:thinking (:busy npc)))})))
-  )
+                            :thought (when (:optimised option) (:thinking (:busy npc)))}))))
 
 (defn find-requirements [requirements step]
   (let [step-requires (:requires step)
@@ -515,13 +516,15 @@
 (defn get-maximum-desired
   "What's the most it's worth doing this step?"
   [step reqs]
-  (Math/ceil
-    (apply max
-      (for [[k provided-value] (:provides step)
-            :let [required-value (reqs k)]
-            :when required-value]
-        (/ (:quantity required-value)
-           (:quantity provided-value))))))
+  (if (:idempotent step)
+    1
+    (Math/ceil
+      (apply max
+             (for [[k provided-value] (:provides step)
+                   :let [required-value (reqs k)]
+                   :when required-value]
+               (/ (:quantity required-value)
+                  (:quantity provided-value)))))))
 
 (defn scale-quantities [has scale-factor]
   (mapvals has (fn [value]
@@ -570,19 +573,23 @@
   [step has]
   ; for every thing required, what is the maximum number of times we could perform the step - min of those
   ; require 3, provided 7, Math/floor
-  (Math/floor
-    (apply min
-      (for [[k required-value] (merge (:consumes step)
-                                      (:requires step))
-            :let [provided-value (has k {:quantity 0})]]
-        (/ (:quantity provided-value)
-           (:quantity required-value))))))
+  (if (:idempotent step)
+    1
+    (Math/floor
+      (apply min
+             (for [[k required-value] (merge (:consumes step)
+                                             (:requires step))
+                   :let [provided-value (has k {:quantity 0})]]
+               (/ (:quantity provided-value)
+                  (:quantity required-value)))))))
 
 ; TODO: optimisation! - everything downstream of optimise must respect 'n'
 ;  scoring of options
 ;  doing of steps
 
-(defn multiply-quantities [parent-quantity {:keys [quantity ticks consumes provides sub-steps] :as step}]
+(defn multiply-quantities [parent-quantity {:keys [quantity ticks consumes provides sub-steps]
+                                            :or {quantity 1}
+                                            :as step}]
   (let [quantity (* parent-quantity quantity)]
     (merge step
       (when ticks {:ticks (* quantity ticks)})
@@ -591,6 +598,20 @@
       (when sub-steps {:sub-steps (map (partial multiply-quantities quantity) sub-steps)}))))
 
 (defn optimise [option npc world]
+
+  ;TODO: does not work on travelling!!! - can we make it work recursively on sub-steps, but still handle travelling sensibly?
+  ; eurgh! good idea but hard - carry limits?
+  ;              "go and fetch wood"
+  ;              how do we multiply that? go multiple times?
+  ;                     repeat x 10 (up to lower of amount needed and amount available)
+  ;                       go x1 (can only go once at a time)
+  ;                          pick up x 5 (up to carry limit)
+  ;                       return x1
+  ;                          drop x 5 (up to amount being held)
+
+  ; some tasks are scalable - cutting down a tree, do it more times, there is more wood and fewer trees
+  ; some tasks aren't - go to the woods and there are 3 trees, go there twice and there are still only 3 !!!
+
   ; OLD:
   ; iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
   ;    eg. "drink water" * (min water-available drinking-needed)
@@ -618,7 +639,7 @@
 
 (defn consider-option [npc locs]
   (fn [{:keys [complete optimised] :as option}]
-    ;(println "consider-option")
+    ;(println "consider-option" [complete optimised])
     (cond
       optimised [option]
       complete [(optimise option npc locs)]
@@ -838,7 +859,7 @@
 
     (cond
       (and (> thinking (+ thought 3))
-           (:complete best-option-so-far))
+           (:optimised best-option-so-far))
       (-> npc
           (assoc-in [:busy :todo] (flatten-chain (:chain best-option-so-far)))
           (update :busy dissoc :options :thinking))
