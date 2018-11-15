@@ -268,6 +268,13 @@
 (def default-npc-reqs
   (zipmap npc-needs (repeat {:quantity 0})))
 
+(def names
+  [
+   ;"Ada"
+   "Hannah" "Eve" "Avalanche" "Lambda"
+
+   "Albert" "Eliezer" "Sigmund" "Carl" "René"])
+
 (def game-state
   (atom
 
@@ -312,6 +319,20 @@
 
     ))
 
+;TODO: they all take all the berries!
+
+(defn add-people [state]
+  (let [more-people (into {} (for [name names]
+                               [(keyword (string/lower-case name))
+                                {:name        name
+                                 :reqs        (merge default-npc-reqs
+                                                     {[:npc :food] {:quantity 50}})
+                                 :has         []
+                                 :known-steps steps
+                                 :location    (rand-nth (keys places))
+                                 :busy nil}]))]
+    (update state :people merge more-people)))
+
 (defn mapvals [m f]
   (into {} (for [[k v] m]
              [k (f v)])))
@@ -320,6 +341,7 @@
 (swap! game-state update :locations mapvals
        (fn [loc]
          (assoc loc :provides (has->provides :loc loc))))
+(swap! game-state add-people)
 
 (defn palette [input]
   (let [[r g b] (cycle (re-seq #"\d{3}" (str (hash input))))
