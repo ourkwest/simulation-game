@@ -321,6 +321,18 @@
 
 ;TODO: they all take all the berries!
 
+(let [seed (volatile! 0)]
+  (defn pseudo-rand []
+    (vswap! seed inc)
+    (let [x (* (Math/sin @seed) 10000)]
+      (- x (Math/floor x)))))
+
+(defn pseudo-rand-int [n]
+  (Math/floor (* (pseudo-rand) n)))
+
+(defn pseudo-rand-nth [coll]
+  (nth coll (pseudo-rand-int (count coll))))
+
 (defn add-people [state]
   (let [more-people (into {} (for [name names]
                                [(keyword (string/lower-case name))
@@ -329,7 +341,7 @@
                                                      {[:npc :food] {:quantity 50}})
                                  :has         []
                                  :known-steps steps
-                                 :location    (rand-nth (keys places))
+                                 :location    (pseudo-rand-nth (keys places))
                                  :busy nil}]))]
     (update state :people merge more-people)))
 
@@ -811,7 +823,7 @@
                   (assoc-in x x-path nil)
                   (- remainder)
                   paths)))
-            (assoc x :error :not-enough-stuff!))            ; error, but return having made the progress we've made
+              (throw (js/Error. "Not enough stuff!")))      ; TODO: can we throw something more specific?
           x))))
 
 (defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
@@ -822,14 +834,18 @@
 
 (defn begin-step [[npc locs]]
   ;(println 'begin-step)
-  (let [[step & todo] (:todo (:busy npc))
-        consumes (:consumes step)
-        [npc locs] (reduce-kv step-consume [npc locs] consumes)]
-    ;(println 'begin-step_1)
-    [(-> npc
-         (update :busy assoc :doing step)
-         (update :busy assoc :todo todo))
-     (update locs (:location npc) #(refresh-provides % :loc))]))
+  (try
+    (let [[step & todo] (:todo (:busy npc))
+          consumes (:consumes step)
+          [npc locs] (reduce-kv step-consume [npc locs] consumes)]
+      ;(println 'begin-step_1)
+      [(-> npc
+           (update :busy assoc :doing step)
+           (update :busy assoc :todo todo))
+       (update locs (:location npc) #(refresh-provides % :loc))])
+    (catch js/Error e
+      (println e)
+      [(assoc npc :busy nil) locs])))
 
 (defn tick-step [[npc locs]]
   [(update-in npc [:busy :doing :ticks] dec) locs])
@@ -1055,17 +1071,27 @@
     ))
 
 
-(defn tick-npcs [{:keys [people locations] :as game-state}]
-  (let [[npcs locs]
-        (reduce
-          (fn [[npcs locs] npc-key]
-            (let [this-npc (npc-key npcs)
-                  [this-npc' locs'] (algorithm [this-npc locs])]
-              [(assoc npcs npc-key this-npc') locs']))
-          [people locations]
-          (keys people))]
-    (assoc game-state :people npcs
-                      :locations locs)))
+(defn tick-npcs [{:keys [people] :as game-state}]
+  (reduce (fn [{:keys [people locations] :as game-state} person-key]
+            (let [person (person-key people)
+                  [person' locations'] (algorithm [person locations])]
+              (-> game-state
+                  (assoc-in [:people person-key] person')
+                  (assoc :locations locations'))))
+          game-state
+          (keys people))
+
+  ;(let [[npcs locs]
+  ;      (reduce
+  ;        (fn [[npcs locs] npc-key]
+  ;          (let [this-npc (npc-key npcs)
+  ;                [this-npc' locs'] (algorithm [this-npc locs])]
+  ;            [(assoc npcs npc-key this-npc') locs']))
+  ;        [people locations]
+  ;        (keys people))]
+  ;  (assoc game-state :people npcs
+  ;                    :locations locs))
+  )
 
 (defn tick []
   ;(println "Hello")
