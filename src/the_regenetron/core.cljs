@@ -276,10 +276,9 @@
 (def names
   [
    ;"Ada"
-   "Hannah"
-   ;"Eve" "Avalanche" "Lambda"
+   "Hannah" "Eve" "Avalanche" "Lambda"
 
-   ;"Albert" "Eliezer" "Sigmund" "Carl" "René"
+   "Albert" "Eliezer" "Sigmund" "Carl" "René"
    ])
 
 (def game-state
