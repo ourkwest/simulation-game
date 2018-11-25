@@ -74,6 +74,8 @@
 
 
 
+(defn has-map [f tree]
+  (f (update tree :has #(mapv (partial has-map f) %))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;                   ;;;;
@@ -102,6 +104,9 @@
              :north-borders {:label  "the North Borders"
                              :id  :north-borders
                              :has [{:id  :berry-bush
+                                    :grow {:growth 0
+                                           :target 3
+                                           :prototype {:id :berry}}
                                     :has [{:id :berry}
                                           {:id :berry}
                                           {:id :berry}]}]}})
@@ -271,9 +276,11 @@
 (def names
   [
    ;"Ada"
-   "Hannah" "Eve" "Avalanche" "Lambda"
+   "Hannah"
+   ;"Eve" "Avalanche" "Lambda"
 
-   "Albert" "Eliezer" "Sigmund" "Carl" "René"])
+   ;"Albert" "Eliezer" "Sigmund" "Carl" "René"
+   ])
 
 (def game-state
   (atom
@@ -319,8 +326,6 @@
 
     ))
 
-;TODO: they all take all the berries!
-
 (let [seed (volatile! 0)]
   (defn pseudo-rand []
     (vswap! seed inc)
@@ -364,9 +369,14 @@
      :dark  (str "rgb(" r \, g \, b ")")}))
 
 (defn has-palette [node]
-  (-> node
-      (assoc :palette (palette (or (:name node) (:id node) "")))
-      (update :has #(mapv has-palette %))))
+  (let [prototype-palette (fn [node]
+                            (if (:grow node)
+                              (update-in node [:grow :prototype] has-palette)
+                              node))]
+    (-> node
+        (assoc :palette (palette (or (:name node) (:id node) "")))
+        prototype-palette
+        (update :has #(mapv has-palette %)))))
 
 (swap! game-state update :people mapvals has-palette)
 
@@ -812,6 +822,7 @@
     (loop [x node
            quantity-to-consume quantity
            [path & paths] paths]
+      ;(println x quantity path)
         (if (pos? quantity-to-consume)
           (if path                                        ; TODO: else exception?
             (let [quantity-available (last path)
@@ -844,7 +855,8 @@
            (update :busy assoc :todo todo))
        (update locs (:location npc) #(refresh-provides % :loc))])
     (catch js/Error e
-      (println e)
+      (.log js/console e)
+      ;(println e)
       [(assoc npc :busy nil) locs])))
 
 (defn tick-step [[npc locs]]
@@ -917,29 +929,24 @@
                                    (take-last 1)
                                    (into {}))))
 
+(defn exhaust-reqs [reqs]
+  (-> reqs
+      (update-in [[:npc :food] :quantity] #(+ % 0.02))
+      (update-in [[:npc :drink] :quantity] #(+ % 0.05))
+      (update-in [[:npc :sleep] :quantity] #(+ % 0.01))
+      (update-in [[:npc :chat] :quantity] #(+ % 0.005)) ; variable by character?
+      ))
+
+(defn exhaust-character [character]
+  (update character :reqs exhaust-reqs))
+
 (defn algorithm [[npc locs :as npc-locs]]
-
-
-  (cond
-    (or (-> npc :busy :doing)
-        (-> npc :busy :todo)) (make-progress npc-locs)
-    (-> npc :busy :reqs) [(try-to-choose-an-option (grow-options npc-locs)) locs]
-    :else [(choose-greatest-need npc) locs])
-
-
-  ;(let [busy (:busy npc)]
-  ;
-  ;
-  ;
-  ;  )
-
-
-
-  ;(if (:busy npc)
-  ;  (be-busy npc)
-  ;  (make-busy npc map))
-  ;npc
-  )
+  (let [[npc' locs'] (cond
+                       (or (-> npc :busy :doing)
+                           (-> npc :busy :todo)) (make-progress npc-locs)
+                       (-> npc :busy :reqs) [(try-to-choose-an-option (grow-options npc-locs)) locs]
+                       :else [(choose-greatest-need npc) locs])]
+    [(exhaust-character npc') locs']))
 
 
 (defn describe-npc [npc]
@@ -1079,26 +1086,33 @@
                   (assoc-in [:people person-key] person')
                   (assoc :locations locations'))))
           game-state
-          (keys people))
+          (keys people)))
 
-  ;(let [[npcs locs]
-  ;      (reduce
-  ;        (fn [[npcs locs] npc-key]
-  ;          (let [this-npc (npc-key npcs)
-  ;                [this-npc' locs'] (algorithm [this-npc locs])]
-  ;            [(assoc npcs npc-key this-npc') locs']))
-  ;        [people locations]
-  ;        (keys people))]
-  ;  (assoc game-state :people npcs
-  ;                    :locations locs))
-  )
+(defn grow [node]
+  (if-let [{:keys [growth target prototype]} (:grow node)]
+    (let [new-growth (inc growth)]
+      (if (= new-growth target)
+        (-> node
+            (assoc-in [:grow :growth] 0)
+            (update :has conj prototype))
+        (assoc-in node [:grow :growth] new-growth)))
+    node))
+
+(defn grow-all [location]
+  (has-map (fn [node]
+             (refresh-provides (grow node) :loc))
+           location))
+
+(defn tick-locs [game-state]
+  (update game-state :locations mapvals grow-all))
+
+(def tick-game-state (comp
+                       tick-locs
+                       tick-npcs
+                       ))
 
 (defn tick []
-  ;(println "Hello")
-
-  (swap! game-state tick-npcs)
-
-  )
+  (swap! game-state tick-game-state))
 
 (defn render-story [{:keys [story]}]
   (into [:div] (map :html story)))
@@ -1159,7 +1173,7 @@
       (when-let [l (-> node :location places :label)]
         (str " at " l))
       (when-let [q (:quantity node)]
-        (str " x " q))
+        (str " x " (Math/floor q)))
       (when-let [t (:ticks node)]
         (str " (" t ")"))]]
     (map render-has (:has node))))
