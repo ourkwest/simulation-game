@@ -72,7 +72,23 @@
 ;;                   varied characters: a witch?, a wizard?, King Gizzard?,
 ;;                      Rene Girard, Socrates, Julie D'Aubigny, ...
 
+; TODO: Possession!!!
+;   {:has {:has {:has ...}}} ?
+;   locations possess
+;     nested (perhaps deeply)
+;   characters possess
+;     in their hands - limited storage space! must be able to carry a sizeable log - maybe don't model individual hands!
+;                    - lru cache? drop oldest thing picked up when picking up a new thing if you run out of carry space
+;     in their houses
+;     everywhere? - I chopped down that tree, but I can't carry it all at once! - is this a different concept ("ownership"?)
+;     ownership - flag on item to say who owns it.
+;               - also characters maintain mental list of things they own and where they are, so that their expectations can be violated.
+;   steps
+;     require possession in hand or in location
 
+;  ; characters could have 'known-skills' - transferred by socialising, improved by practice (reduced cost)
+
+; this could be helped by 'habits' - actions that often go well together - eg. go to well, draw water, drink water
 
 (defn has-map [f tree]
   (f (update tree :has #(mapv (partial has-map f) %))))
@@ -145,12 +161,6 @@
                  :when (not= from to)]
              [[from to] (find-best-route [from to])])))
 
-; TODO: =======================================================
-; {[:loc :id] {details...}
-;  [:npc :id] {details...}
-;  [:npc :id] {details...}}
-; TODO: =======================================================
-
 (def abstract
   #{:food
     :drink
@@ -160,69 +170,32 @@
     :security})
 
 (def steps
-  ; TODO!!! Verbs should be parameterised! "Eat <item>"
-  ; or is it better not to? all the specific information must be specified -
-  ; eating berries IS different to eating bread
-  ;  - you need berries!
-  ;  - it provides a different amount of calories
-  ;  - berries have more water in them (provide more drink)
-  [
-   {:name     "drink water"
+  [{:name     "drink water"
     :ticks    1
     :provides {[:npc :drink] {:quantity 1}}
     :consumes {[:npc :water] {:quantity 1}}}
-
    {:name     "draw water"
     :ticks    5
     :provides {[:loc :water] {:quantity 5}}
     :requires {[:loc :well] {:quantity 1}}}
-
    {:name     "eat berry"
     :ticks    2
     :provides {[:npc :drink] {:quantity 0.2}
                [:npc :food]  {:quantity 0.8}}
     :consumes {[:npc :berry] {:quantity 1}}}
-
-   ;{:name     "pick berry"                                  ; TODO: somehow model transferring berries from the bush to the hand.
-   ; :ticks    3
-   ; :provides {:id  :hand
-   ;            :has {:berries 1}}
-   ; :consumes {:id  :hand
-   ;            :has :empty}
-   ; :requires {:location {:has {:id  :berry-bushes          ; this is convoluted - :requires {:berries 1} should suffice???
-   ;                             :has {:id     :berries
-   ;                                   :amount 1}}}}}
-
-   ;{:name     "pick berry"
-   ; :ticks    3
-   ; :provides {[:npc :berry] {:quantity 1}}
-   ; :consumes {[:loc :berry] {:quantity 1}}}
-
-   ; special case logic for actions that move things around?
-   ;   "take" move <x> from 'at location' to 'holding' and set ownership
-   ;   "drop" inverse ^
-   ; maybe a function to return steps based on things they provide - returns all matching steps, plus synthetic ones
-
-   ; "ensure holding" <x> ("hold")
-
    {:name     "sleep"
     :ticks    80
     :provides {[:npc :sleep] {:quantity 100}}
     :requires {[:loc :bed] {:owned true}}}
-
    {:name     "nap"
     :ticks    20
     :provides {[:npc :sleep] {:quantity 10}}}
-
    {:name     "fell a tree"
     :ticks    100
     :requires {[:npc :axe] {:quantity 1}}
     :consumes {[:loc :standing-tree] {:quantity 1}}
     :provides {[:loc :felled-tree] {:quantity 1}}}
-   ]
-
-  )
-
+   ])
 
 (defn merge-key [m k f a b]
   (let [v (f (k a) (k b))]
@@ -283,23 +256,11 @@
 
 (def game-state
   (atom
-
-    {
-     ;:objects   {1 {:id :axe}
-     ;            2 {:id :berry}
-     ;            3 {:id :berry}
-     ;            4 {:id :berry}
-     ;            5 {:id :berry-bush
-     ;               :has [2 3 4]}
-     ;            }
-
-     :story     [{:html [:h1 "Welcome to The Regenetron"]}
+    {:story     [{:html [:h1 "Welcome to The Regenetron (Working Title)"]}
                  {:html [:p "A paragraph of epic introductory text..."]}
                  {:html [:p "~"]}
                  {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
-
      :locations places
-
      :people    {:ada {:name        "Ada"
                        :reqs        (merge
                                       default-npc-reqs
@@ -317,13 +278,7 @@
                                              :quantity 50}]}]
                        :known-steps steps
                        :location    :beach
-                       :busy        nil}
-
-                 }
-
-     }
-
-    ))
+                       :busy        nil}}}))
 
 (let [seed (volatile! 0)]
   (defn pseudo-rand []
@@ -381,32 +336,6 @@
 
 (swap! game-state update :locations mapvals has-palette)
 
-;(def object-locations
-;  (atom
-;    {:north-borders [5]}))
-
-; TODO: Possession!!!
-;   {:has {:has {:has ...}}} ?
-;   locations possess
-;     nested (perhaps deeply)
-;   characters possess
-;     in their hands - limited storage space! must be able to carry a sizeable log - maybe don't model individual hands!
-;                    - lru cache? drop oldest thing picked up when picking up a new thing if you run out of carry space
-;     in their houses
-;     everywhere? - I chopped down that tree, but I can't carry it all at once! - is this a different concept ("ownership"?)
-;     ownership - flag on item to say who owns it.
-;               - also characters maintain mental list of things they own and where they are, so that their expectations can be violated.
-;   steps
-;     require possession in hand or in location
-;
-;   one big list of game objects
-;     actually a map keyed by id
-;     { "bag of holding" {:has #{"cheese sandwich"}
-;                         :owned :bob / false}
-;       "cheese sandwich" {} }
-
-
-
 (defn fixed-steps-providing [npc item-key]
   (filter
     (fn [{:keys [provides]}]
@@ -440,89 +369,6 @@
     (fixed-steps-providing npc item-key)
     (synthetic-steps-providing (:location npc) locs item-key)))
 
-;(def verbs
-;  [
-;   {:desc     "{who} drink|drinks {what}"
-;    :ticks    1
-;    :provides {:id     :drink
-;               :amount :drinkable}
-;    :consumes {:drinkable 1}}
-;   {:desc     "{who} eat|eats {what}"
-;    :ticks    [1 :edible]                                   ; (* 1 (:edible what))
-;    :consumes {:edible 1}
-;    }
-;   ])
-
-;(def nouns
-;  [{:id        "water"
-;    :drinkable {:provides {:drink 5}}}
-;   {:id     "berry"
-;    :edible {:ticks    2
-;             :provides {:food  5
-;                        :drink 1}}}])
-
-;(comment
-;  (defverb "{who} drink|drinks {what}" [place who what]
-;
-;           )
-;  )
-
-;(def npc
-;  ; characters could have 'known-skills' - transferred by socialising, improved by practice (reduced cost)
-;  {:needs       {:food     100
-;                 :drink    50
-;                 :sleep    10
-;                 :chat     0                                ; capped at 75? some way to differentiate between needs and wants?
-;                 :warmth   0
-;                 :security 0}
-;   :has         [{:id  :hand
-;                  :has [{:id     :water
-;                         :amount 1}]}
-;                 {:id  :hand
-;                  :has [{:id  :bucket
-;                         :has [{:id     :water
-;                                :amount 5}]}]}
-;                 {:id  :house                               ; rooms / stuff? / precarity??? - not sure this is something an npc 'has' - distinguish between 'has - about person' and 'has - claims ownership'?
-;                  :has []}]
-;   :known-steps steps
-;   :location    :beach
-;   :busy        nil}
-;
-;  )
-
-;(def items-by-need-addressed
-;
-;  {:thirst [{:water 1} {:berries 0.2}]
-;   :hunger [{:berries 0.8} {:bread 1} {:meat 2}]
-;   :tiredness [{:sleep 1}]}
-;
-;  )
-
-
-; PLUS synthetic step {:name "go to <...>" :ticks <distance>
-
-
-;(defn be-busy [npc]
-;  ;TODO!
-;  npc)
-
-;(defn make-busy [npc map]
-;
-;  )
-
-(defn ensure-greatest-need [npc]
-  (if-let [reqs (get-in npc [:busy :reqs])]
-    npc
-    (assoc-in npc [:busy :reqs] (->> npc
-                                     :reqs
-                                     (sort-by (comp :quantity second))
-                                     (take-last 1)
-                                     (into {})))
-
-    ;(let [[id amount] (last (sort-by (comp :quantity second) (:needs npc)))]
-    ;  (assoc-in npc [:busy :need] {[:npc id] amount}))
-    ))
-
 (defn apply-chain [reqs step]
   (merge-subtract reqs (:provides step)))
 
@@ -547,15 +393,6 @@
                             :value   (float (/ benefit cost))
                             :thought (when (:optimised option) (:thinking (:busy npc)))}))))
 
-(defn find-requirements [requirements step]
-  (let [step-requires (:requires step)
-        step-consumes (:consumes step)
-        step-provides (:provides step)]
-    (as-> requirements x
-          (reduce conj x step-requires)
-          (reduce conj x step-consumes)
-          (reduce disj x step-provides))))
-
 (defn get-maximum-desired
   "What's the most it's worth doing this step?"
   [step reqs]
@@ -573,49 +410,28 @@
   (mapvals has (fn [value]
                  (update value :quantity #(* (or % 1) scale-factor)))))
 
-(defn add-step-to [{:keys [start chain end] :as option} reqs]
+(defn add-step-to [{:keys [start] :as option} reqs]
   (fn [step]
-    (let [
-          ;_ (println step)
-          ;new-reqs (find-requirements reqs step)
-
-          maximum-desired (get-maximum-desired step reqs)
-
+    (let [maximum-desired (get-maximum-desired step reqs)
           new-reqs (-> reqs
                        (merge-add (:requires step) (scale-quantities (:consumes step) maximum-desired))
                        (merge-remove (scale-quantities (:provides step) maximum-desired)))
-
-          ;_ (println '(keys new-reqs) (keys new-reqs))
-          ;_ (println (-> start :provides keys set))
-          complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))
-          ;_ (println complete?)
-          ]
+          complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))]
       (-> option
           (update :chain conj (assoc step :complete complete?
                                           :reqs new-reqs
                                           :ideal-n maximum-desired))
           (assoc :complete complete?)))))
 
-(defn prepend-steps [{:keys [start chain end] :as option} npc locs]
-  ;(println "prepend-steps")
+(defn prepend-steps [{:keys [chain end] :as option} npc locs]
   (let [reqs (or (some-> chain first :reqs) (:reqs end))
-        ;reqs (reduce find-requirements (-> end :consumes keys set) chain)
-        ;_ (println 1)
-        ;_ (println '(keys reqs) (keys reqs))
-        ;_ (println '[locs] [locs])
-        useful-steps (distinct (mapcat (partial steps-providing npc locs) (keys reqs)))
-        ;_ (println 2)
-        ;_ (println 'useful-steps useful-steps)
-        ;steps (:known-steps npc)
-        ;useful-steps (remove #(->> % :provides keys (filter reqs) empty?) steps)
-        ]
+        useful-steps (distinct (mapcat (partial steps-providing npc locs) (keys reqs)))]
     (mapv (add-step-to option reqs) useful-steps)))
 
 (defn get-maximum-available
   "What's the most we can do this step?"
   [step has]
   ; for every thing required, what is the maximum number of times we could perform the step - min of those
-  ; require 3, provided 7, Math/floor
   (if (:idempotent step)
     1
     (Math/floor
@@ -625,10 +441,6 @@
                    :let [provided-value (has k {:quantity 0})]]
                (/ (:quantity provided-value)
                   (:quantity required-value)))))))
-
-; TODO: optimisation! - everything downstream of optimise must respect 'n'
-;  scoring of options
-;  doing of steps
 
 (defn multiply-quantities [parent-quantity {:keys [quantity ticks consumes provides sub-steps]
                                             :or {quantity 1}
@@ -682,7 +494,6 @@
 
 (defn consider-option [npc locs]
   (fn [{:keys [complete optimised] :as option}]
-    ;(println "consider-option" [complete optimised])
     (cond
       optimised [option]
       complete [(optimise option npc locs)]
@@ -691,9 +502,7 @@
 (defn grow-options [[npc locs]]
   (let [options (get-in npc [:busy :options])
         loc-provides (-> npc :location locs :provides)
-        ;need (get-in npc [:busy :reqs])
         options-considered 5]
-
     (if (empty? options)
       (-> npc
           (assoc-in [:busy :options] [{:start {:provides (merge-add (has->provides :npc npc)
@@ -702,102 +511,14 @@
                                                :end   {:reqs (get-in npc [:busy :reqs])}}])
           (update-in [:busy :thinking] inc)
           (update :busy dissoc :reqs))
-
-      ; take first n options
-      ;   incomplete?
-      ;     prepend steps
-      ;   else
-      ;     optimise multipliers
-      ; score options
-      ; sort options
-
       (let [[to-consider unconsidered] (split-at options-considered options)
             considered (mapcat (consider-option npc locs) to-consider)
-            ;_ (println 'X)
-            _ (doall considered)
-            ;_ (println 'Y)
-            ]
-
+            _ (doall considered)]
         (-> npc
             (assoc-in [:busy :options] (->> (concat considered unconsidered)
                                             (mapv (partial score-option npc))
                                             (sort-by (comp - :value :score))))
-            (update-in [:busy :thinking] inc))))
-
-    ; if options empty then seed from greatest-need
-    ; if x options are complete then choose one to act on
-    ; sort exiting options by cost:benefit (consumes/requires : provides)
-    ; pick first n, and mapcat fn over them
-    ;   fn extends each option to one or more options
-
-    ;options [{:consumes {:ticks 10}                         ; must be recalculated by walking the whole path forward,
-    ;          :provides {:drink 5}
-    ;          :requires {:at :well}
-    ;
-    ;          :steps [{:name     "drink water"
-    ;                   :ticks    1
-    ;                   :provides {:drink 1}
-    ;                   :consumes {:water 1}}
-    ;                  {:name     "draw water"
-    ;                   :ticks    5
-    ;                   :provides {:water 5}
-    ;                   :requires {:at :well}}]
-    ;          }]
-
-    ; need to iterate over options potentially extending them (or aborting them?)
-    ; need to know which options are most worth considering
-
-
-    ; list of options
-    ;   mapping of every input option to 1 or more output options (or the same option unchanged if out of thinking time)
-
-
-    ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-    ; if option chain is incomplete, prepend steps that match requirements
-    ; if option chain is complete, iterate over - all individual items, all consecutive pairs/triples/quads/etc... adjusting multipliers
-    ;    eg. drink water x (min water-available drinking-needed)
-    ; if option chain is complete, and multipliers have been adjusted, then report cost:benefit
-
-    ; if thinking cost is high relative to patience then perform first completed option
-    ; if thinking cost is low relative to patience then complete a few more options before picking the best by cost:benefit
-    ; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-
-
-    )
-  )
-
-  ; How about...
-  ;   build hypothetical tree
-  ;   for current state
-  ;     try every known action (prepend - imagine we'd just done it)
-  ;     score the results (are there still unmet requirements?, what is the cost? what is the benefit?)
-  ;     for each resulting state (in score order - expend more resources thinking about more better outcomes)
-  ;       try every known action (prepend to chain)
-  ;       score the results
-  ;   explore this tree
-  ;     focus on high scoring paths
-  ;     stop when a path (or several paths to choose between?) is found that has all its requirements met.
-  ;     when needs are less urgent, more time can be spent thinking, looking for possible good action chains
-  ;     when needs are urgent, pick first possible strategy that meets needs.
-
-  ; this could be helped by 'habits' - actions that often go well together - eg. go to well, draw water, drink water
-
-(defn describe-options [npc]
-
-  (doseq [option (-> npc :busy :options)]
-
-    (println
-      (str (when-not (:complete option)
-             "     ...   -> ")
-           (string/join " -> " (map :name (reverse (:chain option))))))
-
-    )
-  npc
-  )
-
-
+            (update-in [:busy :thinking] inc))))))
 
 (defn refresh-provides [node npc-loc]
   (assoc node :provides (has->provides npc-loc node)))
@@ -823,47 +544,38 @@
     (loop [x node
            quantity-to-consume quantity
            [path & paths] paths]
-      ;(println x quantity path)
-        (if (pos? quantity-to-consume)
-          (if path                                        ; TODO: else exception?
-            (let [quantity-available (last path)
-                  remainder (- quantity-available quantity-to-consume)
-                  x-path (interleave (repeat :has) (butlast path))]
-              (if (pos? remainder)
-                (assoc-in x (concat x-path [:quantity]) remainder)
-                (recur
-                  (assoc-in x x-path nil)
-                  (- remainder)
-                  paths)))
-              (throw not-enough-stuff))      ; TODO: can we throw something more specific?
-          x))))
+      (if (pos? quantity-to-consume)
+        (if path
+          (let [quantity-available (last path)
+                remainder (- quantity-available quantity-to-consume)
+                x-path (interleave (repeat :has) (butlast path))]
+            (if (pos? remainder)
+              (assoc-in x (concat x-path [:quantity]) remainder)
+              (recur
+                (assoc-in x x-path nil)
+                (- remainder)
+                paths)))
+          (throw not-enough-stuff))
+        x))))
 
 (defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
-  ;(println 'step-consume)
   (if (= npc-loc :npc)
     [(remove-hasnts (consume npc item quantity)) locs]
     [npc (update locs (:location npc) #(remove-hasnts (consume % item quantity)))]))
 
 (defn begin-step [[npc locs]]
-  ;(println 'begin-step)
   (try
     (let [[step & todo] (:todo (:busy npc))
           consumes (:consumes step)
           [npc locs] (reduce-kv step-consume [npc locs] consumes)]
-      ;(println 'begin-step_1)
       [(-> npc
            (update :busy assoc :doing step)
            (update :busy assoc :todo todo))
        (update locs (:location npc) #(refresh-provides % :loc))])
     (catch js/Error e
-
       (if (= e not-enough-stuff)
         (println (:name npc) "didn't have enough stuff to" (-> npc :busy :todo first :name))
         (throw e))
-
-      ;(println "XXXXXXX" (.-message e))
-      ;(.log js/console e)
-      ;(println e)
       [(assoc npc :busy nil) locs])))
 
 (defn tick-step [[npc locs]]
@@ -894,11 +606,6 @@
   [(update npc dissoc :busy) locs])
 
 (defn make-progress [[npc locs]]
-
-  ; consume
-  ; tick, tick, tick
-  ; provide
-
   (let [{:keys [todo doing]} (:busy npc)]
     (cond
       (and todo (not doing)) (begin-step [npc locs])
@@ -926,7 +633,6 @@
   (let [thinking (-> npc :busy :thinking)
         best-option-so-far (-> npc :busy :options first)
         thought (-> best-option-so-far :score :thought)]
-
     (cond
       (and (> thinking (+ thought 3))
            (:optimised best-option-so-far))
@@ -968,136 +674,6 @@
                        (-> npc :busy :reqs) [(try-to-choose-an-option (grow-options npc-locs)) locs]
                        :else [(choose-greatest-need npc) locs])]
     [(exhaust-character npc') locs']))
-
-
-(defn describe-npc [npc]
-
-  (let [thinking (-> npc :busy :thinking)
-        doing (-> npc :busy :doing)
-        todo (-> npc :busy :todo)
-        actions (remove nil? (cons doing todo))]
-
-    [:span
-     [:span
-      {:style {:background-color (-> npc :palette :light)}}
-      (:name npc)]
-
-     (when thinking
-       [:span {:style {:background-color "rgb(100,150,255)"}}
-        (str "thinking for " thinking)])
-
-     (when (seq actions)
-       [:span {:style {:background-color "rgb(100,250,155)"}}
-        (str "doing: " (->> actions (map :name) (string/join ", ")))])
-
-     [:span {:style {:background-color "rgb(255,200,55)"}}
-      (str "needs: "
-           (string/join ", "
-             (for [[[_ k] {:keys [quantity]}] (:reqs npc)]
-               (str quantity " " (name k)))))]]
-
-    ;(string/join
-    ;  ", "
-    ;  (remove nil? [(:name npc)
-    ;                (when thinking (str "thinking for " thinking))
-    ;                (when (seq actions) (str "doing: (" (->> actions (map :name) (string/join ", ")) ")"))
-    ;                (str "needs: ("
-    ;                     (string/join ", "
-    ;                       (for [[[_ k] {:keys [quantity]}] (:reqs npc)]
-    ;                         (str quantity " " (name k))))
-    ;                     ")")]))
-
-    )
-
-  )
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;                   ;;;;
-;;;;    Game state     ;;;;
-;;;;                   ;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-; defonce
-
-(comment
-  (def state (atom {:story  [{:html [:h1 "Welcome to The Regenetron"]}
-                             {:html [:p "A paragraph of epic introductory text..."]}
-                             {:html [:p "~"]}
-                             {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
-                    :actors [{:name     "Ada Lovelace"
-                              :needs    {:drink 57
-                                         :food  100
-                                         :sleep 123
-                                         }
-                              :location :beach
-                              :has      #{}
-                              :abode    :adas-house}]
-                    :pc     {:location :beach}
-                    ;:people {:player {:location :beach
-                    ;                 :actions  [{:id    1
-                    ;                             :label "look around"}
-                    ;                            {:id    2
-                    ;                             :label "head into the village"}]}}
-                    :time   0
-                    :world  {:places {:beach     {:people [:player]
-                                                  :things [:coconut]}
-                                      :village-0 {:people []
-                                                  :things []}}}
-
-                    }))
-
-  (defn actions [{:keys [people world]}]
-
-    (let []) (-> people :player :location)
-
-    ))
-
-(comment "actor data model:"
-         ; angst = combination (sum?) of all need values
-         {:name     "Ada Lovelace"
-          :needs    {:drink 57
-                     :food  100
-                     :sleep 123
-                     }
-          :location :beach
-          :has      #{}
-          :abode    :adas-house
-          :task     {:steps [{:step   :goto
-                              :target :village-0
-                              :ticks  18}
-                             {:step  :draw-water
-                              :ticks 3}
-                             {:step :drink-water
-                              :ticks 1}]}}
-
-         )
-
-(comment
-  (defn age-actor [needs]
-    (-> needs
-        (update :drink #(+ % 3))
-        (update :food #(+ % 1))
-        (update :sleep #(+ % 1))))
-
-  (defn tick-actor [{:keys [needs task] :as actor}]
-
-
-    (assoc actor :needs (age-actor needs))
-
-
-    ; if actor has a task in progress then continue task
-    ; actor
-    ;   task
-    ;     step in progress, remaining ticks
-    ;     remaining: step, step, step
-
-    ; if actor has no task in progress, then make a plan
-    ;   determine greatest need
-    ;   select possible actions that meet need
-    ;     cost them, and pick the cheapest
-
-    ))
-
 
 (defn tick-npcs [{:keys [people] :as game-state}]
   (reduce (fn [{:keys [people locations] :as game-state} person-key]
@@ -1143,9 +719,7 @@
   (into [:div] (map :html story)))
 
 (defn render-controls [{:keys [pc ticks]}]
-
   [:div
-
    [:div {:style {:display "inline-block"}}
     [:span "Health: " [:b "100% "]]
     [:br]
@@ -1159,16 +733,12 @@
    [:div {:style {:display "inline-block"
                   :margin "10px"}}
     [:span "I "
-
      (into [:select]
-
            (->> pc :actions (mapv (fn [{:keys [id label]}]
                                     [:option {:value id} label]))))
-
      [:input {:type "button"
               :value "Tick!"
               :on-click tick}]
-
      [:input {:type     "button"
               :value    "Tick! (x5)"
               :on-click #(do (tick)
@@ -1176,13 +746,7 @@
                              (tick)
                              (tick)
                              (tick))}]
-
-     [:span "ticks: " ticks]
-     ]]
-
-   ]
-
-  )
+     [:span "ticks: " ticks]]]])
 
 (defn render-has [node]
   (into
@@ -1261,14 +825,4 @@
 
 (reagent/render-component [render] (. js/document (getElementById "app")))
 
-(defn on-js-reload []
-  ;; optionally touch your app-state to force rerendering depending on
-  ;; your application
-  ;; (swap! app-state update-in [:__figwheel_counter] inc)
-)
-
-
-
-; TODO: input affects world state
-;  movement, map
-
+(defn on-js-reload [])
