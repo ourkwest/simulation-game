@@ -816,6 +816,8 @@
                        (map #(cons idx %) (find-quantities item item-id))) (:has x) (range))
     :else []))
 
+(def not-enough-stuff (js/Error. "Not enough stuff!"))
+
 (defn consume [node item-id quantity]
   (let [paths (find-quantities node item-id)]
     (loop [x node
@@ -833,7 +835,7 @@
                   (assoc-in x x-path nil)
                   (- remainder)
                   paths)))
-              (throw (js/Error. "Not enough stuff!")))      ; TODO: can we throw something more specific?
+              (throw not-enough-stuff))      ; TODO: can we throw something more specific?
           x))))
 
 (defn step-consume [[npc locs] [npc-loc item] {:keys [quantity]}]
@@ -854,7 +856,13 @@
            (update :busy assoc :todo todo))
        (update locs (:location npc) #(refresh-provides % :loc))])
     (catch js/Error e
-      (.log js/console e)
+
+      (if (= e not-enough-stuff)
+        (println (:name npc) "didn't have enough stuff to" (-> npc :busy :todo first :name))
+        (throw e))
+
+      ;(println "XXXXXXX" (.-message e))
+      ;(.log js/console e)
       ;(println e)
       [(assoc npc :busy nil) locs])))
 
