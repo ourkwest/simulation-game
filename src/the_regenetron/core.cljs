@@ -909,6 +909,19 @@
 (defn flatten-chain [chain]
   (mapcat #(or (:sub-steps %) [%]) chain))
 
+(defn describe-decision [npc]
+  (println
+    (:name npc)
+    "decided to"
+    (string/join ", " (for [[desc quantity] (-> npc
+                                                :busy
+                                                :todo
+                                                (->> (map (juxt :name :quantity))))]
+                        (if quantity
+                          (str desc "(x" quantity ")")
+                          desc))))
+  npc)
+
 (defn try-to-choose-an-option [npc]
   (let [thinking (-> npc :busy :thinking)
         best-option-so-far (-> npc :busy :options first)
@@ -919,7 +932,8 @@
            (:optimised best-option-so-far))
       (-> npc
           (assoc-in [:busy :todo] (flatten-chain (:chain best-option-so-far)))
-          (update :busy dissoc :options :thinking))
+          (update :busy dissoc :options :thinking)
+          describe-decision)
 
       (> thinking (+ thought 10))
       (do
