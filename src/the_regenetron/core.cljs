@@ -294,17 +294,17 @@
      ;               :has [2 3 4]}
      ;            }
 
-     :story  [{:html [:h1 "Welcome to The Regenetron"]}
-              {:html [:p "A paragraph of epic introductory text..."]}
-              {:html [:p "~"]}
-              {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
+     :story     [{:html [:h1 "Welcome to The Regenetron"]}
+                 {:html [:p "A paragraph of epic introductory text..."]}
+                 {:html [:p "~"]}
+                 {:html [:p "I awake to find myself lying on the beach in the glorious morning sun."]}]
 
      :locations places
 
      :people    {:ada {:name        "Ada"
                        :reqs        (merge
                                       default-npc-reqs
-                                      {[:npc :food]  {:quantity 100} ; TODO: should these be negative?
+                                      {[:npc :food]  {:quantity 0} ; TODO: should these be negative?
                                        [:npc :drink] {:quantity 50}
                                        [:npc :sleep] {:quantity 10}
                                        [:npc :chat]  {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
@@ -722,7 +722,7 @@
         (-> npc
             (assoc-in [:busy :options] (->> (concat considered unconsidered)
                                             (mapv (partial score-option npc))
-                                            (sort-by (comp :value :score))))
+                                            (sort-by (comp - :value :score))))
             (update-in [:busy :thinking] inc))))
 
     ; if options empty then seed from greatest-need
@@ -1106,7 +1106,11 @@
 (defn tick-locs [game-state]
   (update game-state :locations mapvals grow-all))
 
+(defn inc-ticks [game-state]
+  (update game-state :ticks (fnil inc 0)))
+
 (def tick-game-state (comp
+                       inc-ticks
                        tick-locs
                        tick-npcs
                        ))
@@ -1117,7 +1121,7 @@
 (defn render-story [{:keys [story]}]
   (into [:div] (map :html story)))
 
-(defn render-controls [{:keys [pc]}]
+(defn render-controls [{:keys [pc ticks]}]
 
   [:div
 
@@ -1151,6 +1155,8 @@
                              (tick)
                              (tick)
                              (tick))}]
+
+     [:span "ticks: " ticks]
      ]]
 
    ]
