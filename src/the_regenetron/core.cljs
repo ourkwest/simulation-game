@@ -2,7 +2,9 @@
   (:require
     [reagent.core :as reagent :refer [atom]]
     [cljs.pprint :as pp]
-    [clojure.string :as string]))
+    [clojure.string :as string]
+    [the-regenetron.systems.production :as production]
+    [the-regenetron.systems.aging :as aging]))
 
 (enable-console-print!)
 
@@ -91,13 +93,34 @@
 ; this could be helped by 'habits' - actions that often go well together - eg. go to well, draw water, drink water
 
 (defn has-map [f tree]
-  (f (update tree :has #(mapv (partial has-map f) %))))
+  (f (update tree :has #(->> %
+                             (map (partial has-map f))
+                             (remove nil?)
+                             vec))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;                   ;;;;
 ;;;;    Static data    ;;;;
 ;;;;                   ;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+(defn new-item
+  ([id] (new-item id 1))
+  ([id quantity]
+    {:id id :quantity quantity}))
+
+(def pile-of-sticks (-> (new-item :sticks)
+                        (aging/dies-after 200 nil)))
+
+(def berry (-> (new-item :berry)
+               (aging/dies-after 50 nil)))
+(def berry-bush (-> (new-item :berry-bush)
+                    (production/produces-every 5 berry)
+                    (aging/dies-after 400 pile-of-sticks)))
+(def scrubland (-> (new-item :scrubland)
+                   (production/produces-every 20 berry-bush)))
+
 
 ;TODO: is every npc going to have it's own map as well as the world having territory?
 (def places {:beach {:label "the beach"
@@ -119,13 +142,21 @@
                          :id :village-4}
              :north-borders {:label  "the North Borders"
                              :id  :north-borders
-                             :has [{:id  :berry-bush
-                                    :grow {:growth 0
-                                           :target 3
-                                           :prototype {:id :berry}}
-                                    :has [{:id :berry}
-                                          {:id :berry}
-                                          {:id :berry}]}]}})
+                             :has [
+                                   berry
+                                   berry
+                                   berry
+                                   berry-bush
+                                   scrubland
+
+                                   ;{:id  :berry-bush
+                                   ; :system/production {:growth 0
+                                   ;                     :target 3
+                                   ;                     :prototype {:id :berry}}
+                                   ; :has [{:id :berry}
+                                   ;       {:id :berry}
+                                   ;       {:id :berry}]}
+                                   ]}})
 
 (def raw-links
   [[:beach     "the beach"                     14 18 "the village"         :village-1]
@@ -207,6 +238,8 @@
   (if (and a b)
     (+ a b)
     (or a b)))
+
+(def inc-nil (fnil inc 0))
 
 (defn add-objects [a b]
   (-> {}
@@ -324,8 +357,8 @@
 
 (defn has-palette [node]
   (let [prototype-palette (fn [node]
-                            (if (:grow node)
-                              (update-in node [:grow :prototype] has-palette)
+                            (if (:system/production node)
+                              (update-in node [:system/production :prototype] has-palette)
                               node))]
     (-> node
         (assoc :palette (palette (or (:name node) (:id node) "")))
@@ -676,6 +709,8 @@
     [(exhaust-character npc') locs']))
 
 (defn tick-npcs [{:keys [people] :as game-state}]
+  ; TODO: give each NPC a map in their head - then they can think without looking at the world?
+  ; but they still need to mutate the world sometimes!!! - they should only ever mutate their own location though!
   (reduce (fn [{:keys [people locations] :as game-state} person-key]
             (let [person (person-key people)
                   [person' locations'] (algorithm [person locations])]
@@ -685,26 +720,20 @@
           game-state
           (keys people)))
 
-(defn grow [node]
-  (if-let [{:keys [growth target prototype]} (:grow node)]
-    (let [new-growth (inc growth)]
-      (if (= new-growth target)
-        (-> node
-            (assoc-in [:grow :growth] 0)
-            (update :has conj prototype))
-        (assoc-in node [:grow :growth] new-growth)))
-    node))
-
-(defn grow-all [location]
+(defn run-systems [location]
   (has-map (fn [node]
-             (refresh-provides (grow node) :loc))
+             (some->
+               node
+               production/produce
+               aging/age
+               (refresh-provides :loc)))
            location))
 
 (defn tick-locs [game-state]
-  (update game-state :locations mapvals grow-all))
+  (update game-state :locations mapvals run-systems))
 
 (defn inc-ticks [game-state]
-  (update game-state :ticks (fnil inc 0)))
+  (update game-state :ticks inc-nil))
 
 (def tick-game-state (comp
                        inc-ticks
