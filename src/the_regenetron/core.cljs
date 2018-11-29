@@ -308,7 +308,7 @@
                                      ; :quantity 5}            ; fifo queue when picking things up - hold limit?
                                      {:id  :bucket
                                       :has [{:id       :water
-                                             :quantity 50}]}]
+                                             :quantity 5}]}]
                        :known-steps steps
                        :location    :beach
                        :busy        nil}}}))
@@ -402,11 +402,19 @@
     (fixed-steps-providing npc item-key)
     (synthetic-steps-providing (:location npc) locs item-key)))
 
+(defn scale-quantities [has scale-factor]
+  (mapvals has (fn [value]
+                 (update value :quantity #(* (or % 1) scale-factor)))))
+
 (defn apply-chain [reqs step]
-  (merge-subtract reqs (:provides step)))
+  (let [multiplier (or (:quantity step) (:ideal-n step))]
+    (merge-subtract reqs (scale-quantities (:provides step) multiplier))))
+
+(defn clip-0 [x]
+  (if (pos? x) x 0))
 
 (defn score-reqs [reqs]
-  (apply - 0 (map (comp :quantity reqs) npc-needs)))
+  (apply - 0 (map (comp clip-0 :quantity reqs) npc-needs)))
 
 (defn score-option [npc option]
   (if (-> option :score :thought)
@@ -438,10 +446,6 @@
                    :when required-value]
                (/ (:quantity required-value)
                   (:quantity provided-value)))))))
-
-(defn scale-quantities [has scale-factor]
-  (mapvals has (fn [value]
-                 (update value :quantity #(* (or % 1) scale-factor)))))
 
 (defn add-step-to [{:keys [start] :as option} reqs]
   (fn [step]
@@ -744,6 +748,11 @@
 (defn tick []
   (swap! game-state tick-game-state))
 
+(defn autotick []
+  (tick)
+  (when (:auto @game-state)
+    (js/setTimeout autotick 500)))
+
 (defn render-story [{:keys [story]}]
   (into [:div] (map :html story)))
 
@@ -776,17 +785,30 @@
                              (tick)
                              (tick)
                              (tick))}]
+     [:input {:type "button"
+              :value "Tick continually..."
+              :on-click #(do
+                           (swap! game-state update :auto not)
+                           (autotick))}]
      [:span "ticks: " ticks]]]])
 
 (defn render-has [node]
   (into
     [:div
-     {:style {:border           (str "2px solid " (-> node :palette :dark))
-              :border-radius    "7px"
-              :background-color (-> node :palette :light)
-              :color            (-> node :palette :dark)
-              :display          "inline-block"
-              :margin          "3px"}}
+     {:style (merge {:border           (str "2px solid " (-> node :palette :dark))
+                     :border-radius    "7px"
+                     :background-color (-> node :palette :light)
+                     :color            (-> node :palette :dark)
+                     :display          "inline-block"
+                     :margin           "3px"}
+                    (when (#{:food :drink :sleep} (:id node))
+                      {:color      :black
+                       :background (let [pct (if-let [p (:quantity node)]
+                                               (str p)
+                                               "100")]
+                                     (str "linear-gradient(90deg, "
+                                          (-> node :palette :dark) " " pct "%, "
+                                          (-> node :palette :light) " " pct "%)"))}))}
      [:div
       {:style {:display "inline-block"
                :padding "3px"}}
@@ -913,6 +935,8 @@
      (render-controls state)
      (render-loc-overviews state)]))
 
-(reagent/render-component [render-overview] (. js/document (getElementById "app")))
+(reagent/render-component [render] (. js/document (getElementById "app")))
 
 (defn on-js-reload [])
+
+;TODO: bug when :has (water x0)
