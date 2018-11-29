@@ -750,21 +750,22 @@
 (defn render-controls [{:keys [pc ticks]}]
   [:div
    [:div {:style {:display "inline-block"}}
-    [:span "Health: " [:b "100% "]]
-    [:br]
-    [:span "Hunger: " [:b "10% "]]
-    [:br]
-    [:span "Tiredness: " [:b "10% "]]
-    [:br]
+    ;[:span "Health: " [:b "100% "]]
+    ;[:br]
+    ;[:span "Hunger: " [:b "10% "]]
+    ;[:br]
+    ;[:span "Tiredness: " [:b "10% "]]
+    ;[:br]
     ;[:span "Location: " [:b (-> pc :location name)] " "]
     ]
 
    [:div {:style {:display "inline-block"
                   :margin "10px"}}
-    [:span "I "
-     (into [:select]
-           (->> pc :actions (mapv (fn [{:keys [id label]}]
-                                    [:option {:value id} label]))))
+    [:span
+     ;"I "
+     ;(into [:select]
+     ;      (->> pc :actions (mapv (fn [{:keys [id label]}]
+     ;                               [:option {:value id} label]))))
      [:input {:type "button"
               :value "Tick!"
               :on-click tick}]
@@ -798,6 +799,23 @@
         (str " (" t ")"))]]
     (map render-has (:has node))))
 
+(defn render-has-overview [node]
+  (into
+    [:div
+     {:style {:border           (str "2px solid " (-> node :palette :dark))
+              :border-radius    "7px"
+              :background-color (-> node :palette :light)
+              :color            (-> node :palette :dark)
+              :display          "inline-block"
+              :margin          "3px"}}
+     [:div
+      {:style {:display "inline-block"
+               :padding "3px"}}
+      (or (:name node) (:id node))
+      (when-let [q (:quantity node)]
+        (str " x " (Math/floor q)))]]
+    (map render-has (:has node))))
+
 (defn reqs->has [node]
   (update node :has conj (has-palette {:id      :needs
                                        :has     (for [[[_ k] {:keys [quantity]}] (:reqs node)]
@@ -821,6 +839,12 @@
                                                    :quantity (:quantity action)
                                                    :ticks    (:ticks action)})}))
       node)))
+
+(defn doing->has-overview [node]
+  (if-let [doing (-> node :busy :doing)]
+    (update node :has conj (has-palette {:id       (:name doing)
+                                         :quantity (:quantity doing)}))
+    node))
 
 (defn stuck->has [node]
   (if (:stuck node)
@@ -847,11 +871,48 @@
 (defn render []
   (let [state @game-state]
     [:div
-     (render-story state)
+     ;(render-story state)
      (render-controls state)
      (render-npcs state)
      (render-locs state)]))
 
-(reagent/render-component [render] (. js/document (getElementById "app")))
+
+(defn render-loc-overviews [state]
+  (for [[loc-key loc] (:locations state)]
+    [:div {:key (str (random-uuid))}
+     [:div
+      [:br]
+      [:div (:label loc)]
+      [:div {:style {:border           (str "2px solid rgb(0,0,50)")
+                     :border-radius    "7px"
+                     :background-color "rgb(220,220,255)"
+                     :color            "rgb(0,0,50)"
+                     :display          "inline-block"
+                     :margin           "3px"}}
+       (for [thing (:has loc)]
+         [:div {:key (str (random-uuid))}
+          (render-has-overview thing)])]
+
+      [:div {:style {:border           (str "2px solid rgb(50,40,0)")
+                     :border-radius    "7px"
+                     :background-color "rgb(255,240,200)"
+                     :color            "rgb(50,40,0)"
+                     :display          "inline-block"
+                     :margin           "3px"}}
+       (for [npc (filter #(= loc-key (:location %)) (vals (:people state)))]
+         [:div {:key (str (random-uuid))}
+          (-> npc
+              thinking->has
+              doing->has-overview
+              stuck->has
+              render-has-overview)])]]]))
+
+(defn render-overview []
+  (let [state @game-state]
+    [:div
+     (render-controls state)
+     (render-loc-overviews state)]))
+
+(reagent/render-component [render-overview] (. js/document (getElementById "app")))
 
 (defn on-js-reload [])
