@@ -123,6 +123,8 @@
 
 (def well (-> (new-item :well)))
 
+(def embers (-> (new-item :embers)))
+
 ;TODO: is every npc going to have it's own map as well as the world having territory?
 (def places {:beach {:label "the beach"
                      :id  :beach
@@ -130,7 +132,7 @@
                             :has [berry berry berry berry berry]}]}
              :village-0 {:label  "the centre of the village"
                          :id :village-0
-                         :has [well]}
+                         :has [embers]}
              :village-1 {:label  "the South side of the village"
                          :id :village-1}
              :village-2 {:label  "the North side of the village"
@@ -138,7 +140,8 @@
              :village-3 {:label  "the East side of the village"
                          :id :village-3}
              :village-4 {:label  "the West side of the village"
-                         :id :village-4}
+                         :id :village-4
+                         :has [well]}
              :north-borders {:label  "the North Borders"
                              :id  :north-borders
                              :has [berry
@@ -219,6 +222,18 @@
    {:name     "nap"
     :ticks    20
     :provides {[:npc :sleep] {:quantity 10}}}
+
+   {:name     "build fire"
+    :ticks    3
+    :requires {[:loc :embers] {:quantity 1}}
+    :consumes {[:npc :sticks] {:quantity 1}}
+    :provides {[:loc :flames] {:quantity 100}}}
+
+   {:name     "sit by fire"
+    :ticks    5
+    :requires {[:loc :flames] {:quantity 1}}
+    :provides {[:npc :warmth] {:quantity 5}}}
+
    {:name     "fell a tree"
     :ticks    100
     :requires {[:npc :axe] {:quantity 1}}
@@ -705,7 +720,8 @@
       (update-in [[:npc :food] :quantity] #(+ % 0.02))
       (update-in [[:npc :drink] :quantity] #(+ % 0.05))
       (update-in [[:npc :sleep] :quantity] #(+ % 0.01))
-      (update-in [[:npc :chat] :quantity] #(+ % 0.005)) ; variable by character?
+      (update-in [[:npc :warmth] :quantity] #(+ % 0.02))
+      ;(update-in [[:npc :chat] :quantity] #(+ % 0.005)) ; variable by character?
       ))
 
 (defn exhaust-character [character]
