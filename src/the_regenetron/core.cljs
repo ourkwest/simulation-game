@@ -386,6 +386,7 @@
          :ticks      (:ticks route)
          :provides   (:provides loc)
          :idempotent true
+         :reset-loc  true
          :sub-steps  (map (fn [{:keys [ticks description from to]}]
                             {:name       (str "go to " description)
                              :ticks      ticks
@@ -451,12 +452,19 @@
           new-reqs (-> reqs
                        (merge-add (:requires step) (scale-quantities (:consumes step) maximum-desired))
                        (merge-remove (scale-quantities (:provides step) maximum-desired)))
+          ; if moving to a location that doesn't provide all :loc :reqs then abort!
+          ; you have to pick things up before you move away from them
+          abort? (and (:reset-loc step) (some #(= (first %) :loc) (keys new-reqs)))
           complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))]
-      (-> option
-          (update :chain conj (assoc step :complete complete?
-                                          :reqs new-reqs
-                                          :ideal-n maximum-desired))
-          (assoc :complete complete?)))))
+      (if abort?
+        (do
+          (println "Aborting!")
+          (assoc option :abort abort?))
+        (-> option
+            (update :chain conj (assoc step :complete complete?
+                                            :reqs new-reqs
+                                            :ideal-n maximum-desired))
+            (assoc :complete complete?))))))
 
 (defn prepend-steps [{:keys [chain end] :as option} npc locs]
   (let [reqs (or (some-> chain first :reqs) (:reqs end))
@@ -528,8 +536,9 @@
       optimised)))
 
 (defn consider-option [npc locs]
-  (fn [{:keys [complete optimised] :as option}]
+  (fn [{:keys [complete optimised abort] :as option}]
     (cond
+      abort []
       optimised [option]
       complete [(optimise option npc locs)]
       :else (prepend-steps option npc locs))))
