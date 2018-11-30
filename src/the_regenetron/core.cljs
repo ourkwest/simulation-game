@@ -685,7 +685,7 @@
           (update :busy dissoc :options :thinking)
           describe-decision)
 
-      (> thinking (+ thought 10))
+      (and thought (> thinking (+ thought 10)))
       (do
         (println (:name npc) "is stuck!!!")
         (assoc npc :stuck true))
