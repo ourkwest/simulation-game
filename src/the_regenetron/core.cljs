@@ -105,7 +105,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defn new-item
+(defn new-item ;TODO: is quantity meaningful here, or is each item just 1 item in the object tree?
   ([id] (new-item id 1))
   ([id quantity]
     {:id id :quantity quantity}))
@@ -121,17 +121,16 @@
 (def scrubland (-> (new-item :scrubland)
                    (production/produces-every 20 berry-bush)))
 
+(def well (-> (new-item :well)))
 
 ;TODO: is every npc going to have it's own map as well as the world having territory?
 (def places {:beach {:label "the beach"
                      :id  :beach
                      :has [{:id  :palm-tree
-                            :has [{:id       :berry
-                                   :quantity 5}]}]}
+                            :has [berry berry berry berry berry]}]}
              :village-0 {:label  "the centre of the village"
                          :id :village-0
-                         :has [{:id :well}]
-                         }
+                         :has [well]}
              :village-1 {:label  "the South side of the village"
                          :id :village-1}
              :village-2 {:label  "the North side of the village"
@@ -142,8 +141,7 @@
                          :id :village-4}
              :north-borders {:label  "the North Borders"
                              :id  :north-borders
-                             :has [
-                                   berry
+                             :has [berry
                                    berry
                                    berry
                                    berry-bush
