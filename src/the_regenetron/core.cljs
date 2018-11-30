@@ -814,7 +814,8 @@
       (when-let [l (-> node :location places :label)]
         (str " at " l))
       (when-let [q (:quantity node)]
-        (str " x " (Math/floor q)))
+        (when (< 1 q)
+          (str " x " (Math/floor q))))
       (when-let [t (:ticks node)]
         (str " (" t ")"))]]
     (map render-has (:has node))))
@@ -833,7 +834,8 @@
                :padding "3px"}}
       (or (:name node) (:id node))
       (when-let [q (:quantity node)]
-        (str " x " (Math/floor q)))]]
+        (when (< 1 q)
+          (str " x " (Math/floor q))))]]
     (map render-has (:has node))))
 
 (defn reqs->has [node]
