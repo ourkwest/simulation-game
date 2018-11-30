@@ -808,6 +808,9 @@
                              (tick)
                              (tick)
                              (tick))}]
+     [:input {:type     "button"
+              :value    "Tick! (x50)"
+              :on-click #(doall (repeatedly 50 tick))}]
      [:input {:type "button"
               :value "Tick continually..."
               :on-click #(do
@@ -964,4 +967,19 @@
 
 (defn on-js-reload [])
 
-;TODO: bug when :has (water x0)
+
+; debugging
+
+(defn show-npc [npc-kw]
+  (update-in (-> @game-state :people npc-kw)
+             [:busy :options]
+             (fn [options]
+               (map (fn [option]
+                      ;option
+                      (-> option
+                          (update-in [:start :provides] mapvals #(select-keys % [:quantity]))
+                          (update :chain (fn [chain]
+                                              (map (fn [step]
+                                                     (update step :provides mapvals #(select-keys % [:quantity])))
+                                                   chain))))) options))))
+
