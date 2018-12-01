@@ -110,6 +110,9 @@
   ([id quantity]
     {:id id :quantity quantity}))
 
+(defn has [node & items]
+  (assoc node :has items))
+
 (def pile-of-sticks (-> (new-item :sticks)
                         (aging/dies-after 200 nil)))
 
@@ -119,7 +122,14 @@
                     (production/produces-every 5 berry)
                     (aging/dies-after 400 pile-of-sticks)))
 (def scrubland (-> (new-item :scrubland)
-                   (production/produces-every 20 berry-bush)))
+                   (production/produces-every 20 berry-bush)
+                   (has pile-of-sticks
+                        pile-of-sticks
+                        pile-of-sticks
+                        (-> berry-bush (has berry berry berry))
+                        (-> berry-bush (aging/aged 100) (has berry berry berry berry))
+                        (-> berry-bush (aging/aged 200) (has berry berry berry berry berry))
+                        (-> berry-bush (aging/aged 300) (has berry berry berry berry berry berry)))))
 
 (def well (-> (new-item :well)))
 
@@ -144,11 +154,7 @@
                          :has [well]}
              :north-borders {:label  "the North Borders"
                              :id  :north-borders
-                             :has [berry
-                                   berry
-                                   berry
-                                   berry-bush
-                                   scrubland
+                             :has [scrubland
 
                                    ;{:id  :berry-bush
                                    ; :system/production {:growth 0
