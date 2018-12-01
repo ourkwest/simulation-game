@@ -659,6 +659,11 @@
     [(provide npc item v) locs]
     [npc (update locs (:location npc) #(provide % item v))]))
 
+(defn check-completion [npc]
+  (if (-> npc :busy :todo)
+    npc
+    (dissoc npc :busy)))
+
 (defn end-step [[npc locs]]
   (let [step (:doing (:busy npc))
         provides (:provides step)
@@ -666,19 +671,16 @@
         [npc locs] (reduce-kv step-provide [npc locs] provides)]
     [(-> npc
          (update :busy dissoc :doing)
-         (update :location #(or new-location %)))
+         (update :location #(or new-location %))
+         check-completion)
      (update locs (:location npc) #(refresh-provides % :loc))]))
-
-(defn steps-completed [[npc locs]]
-  [(update npc dissoc :busy) locs])
 
 (defn make-progress [[npc locs]]
   (let [{:keys [todo doing]} (:busy npc)]
     (cond
       (and todo (not doing)) (begin-step [npc locs])
       (pos? (:ticks doing)) (tick-step [npc locs])
-      (and doing (zero? (:ticks doing))) (end-step [npc locs])
-      (not todo) (steps-completed [npc locs]))))
+      (and doing (zero? (:ticks doing))) (end-step [npc locs]))))
 
 (defn flatten-chain [chain]
   (mapcat #(or (:sub-steps %) [%]) chain))
