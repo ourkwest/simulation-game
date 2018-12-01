@@ -3,9 +3,13 @@
 
 
 (defn dies-after [node limit corpse]
-  (assoc node :system/aging {:age    0
-                             :limit  limit
-                             :corpse corpse}))
+  (update node :system/aging assoc
+          :age 0
+          :limit limit
+          :corpse corpse))
+
+(defn aged [node age]
+  (update node :system/aging assoc :age age))
 
 (defn age [node]
   (if-let [{:keys [age limit corpse]} (:system/aging node)]
