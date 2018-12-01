@@ -478,6 +478,7 @@
           ; you have to pick things up before you move away from them
           abort? (and (:reset-loc step) (some #(= (first %) :loc) (keys new-reqs)))
           complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))]
+      ; TODO: iff complete - must rework travelling steps - because when they were added we had no idea where they were coming from!!!
       (if abort?
         (do
           (println "Aborting!")
