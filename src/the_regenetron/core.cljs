@@ -348,8 +348,7 @@
   (let [more-people (into {} (for [name names]
                                [(keyword (string/lower-case name))
                                 {:name        name
-                                 :reqs        (merge default-npc-reqs
-                                                     {[:npc :food] {:quantity 50}})
+                                 :reqs        (zipmap npc-needs (repeat {:quantity (pseudo-rand-int 50)}))
                                  :has         []
                                  :known-steps steps
                                  :location    (pseudo-rand-nth (keys places))
@@ -969,15 +968,15 @@
      (render-controls state)
      (render-loc-overviews state)]))
 
-(reagent/render-component [render] (. js/document (getElementById "app")))
+(reagent/render-component [render-overview] (. js/document (getElementById "app")))
 
 (defn on-js-reload [])
 
 
 ; debugging
 
-(defn show-npc [npc-kw]
-  (update-in (-> @game-state :people npc-kw)
+(defn show-npc [npc-kw & [custom-game-state]]
+  (update-in (-> (or custom-game-state @game-state) :people npc-kw)
              [:busy :options]
              (fn [options]
                (map (fn [option]
