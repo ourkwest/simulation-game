@@ -949,7 +949,8 @@
                      :background-color "rgb(220,220,255)"
                      :color            "rgb(0,0,50)"
                      :display          "inline-block"
-                     :margin           "3px"}}
+                     :margin           "3px"
+                     :max-width        "50%"}}
        (for [thing (:has loc)]
          [:div {:key (str (random-uuid))}
           (render-has-overview thing)])]
@@ -959,7 +960,8 @@
                      :background-color "rgb(255,240,200)"
                      :color            "rgb(50,40,0)"
                      :display          "inline-block"
-                     :margin           "3px"}}
+                     :margin           "3px"
+                     :max-width        "50%"}}
        (for [npc (filter #(= loc-key (:location %)) (vals (:people state)))]
          [:div {:key (str (random-uuid))}
           (-> npc
