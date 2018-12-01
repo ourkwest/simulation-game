@@ -4,7 +4,9 @@
     [cljs.pprint :as pp]
     [clojure.string :as string]
     [the-regenetron.systems.production :as production]
-    [the-regenetron.systems.aging :as aging]))
+    [the-regenetron.systems.aging :as aging]
+    [the-regenetron.systems.diminishing :as diminishing]
+    ))
 
 (enable-console-print!)
 
@@ -758,6 +760,7 @@
                node
                production/produce
                aging/age
+               diminishing/diminish
                (refresh-provides :loc)))
            location))
 
