@@ -201,6 +201,14 @@
                  :when (not= from to)]
              [[from to] (find-best-route [from to])])))
 
+(defn average [s]
+  (let [{:keys [count total]}
+        (reduce (fn [acc v] (-> acc (update :count inc) (update :total + v))) {:count 0 :total 0} s)]
+    (/ total count)))
+
+(def average-route-ticks
+  (-> routes vals (->> (map :ticks)) average))
+
 (def abstract
   #{:food
     :drink
@@ -397,26 +405,19 @@
 
 (defn synthetic-steps-providing [loc-key locs [npc-loc item-id]]
   (if (= npc-loc :npc)
-    (when-not (abstract item-id)
+    (when-not (abstract item-id) ; TODO: might need to stop them taking other things? (eg. the well)
       [{:name     (str "take " (name item-id))
         :ticks    1
         :provides {[:npc item-id] {:quantity 1}}
         :consumes {[:loc item-id] {:quantity 1}}}])
     (for [[loc-id loc] locs :when (-> loc :provides (get [:loc item-id]))]
-      (let [route (routes [loc-key loc-id])]
-        {:name       (str "go to " (-> places (:id loc) :label))
-         :ticks      (:ticks route)
-         :provides   (:provides loc)
-         :idempotent true
-         :reset-loc  true
-         :sub-steps  (map (fn [{:keys [ticks description from to]}]
-                            {:name       (str "go to " description)
-                             :ticks      ticks
-                             :idempotent true
-                             :from       from
-                             :to         to})
-                          (:path route))})))) ;OLD TODO: needs to be {[:loc :id] quantity} !!!
-
+      {:name       (str "go to " (-> places (:id loc) :label))
+       :ticks      average-route-ticks
+       :provides   (:provides loc)
+       :idempotent true
+       :reset-loc  true
+       :estimated  true
+       :move-to    loc-id})))
 
 (defn steps-providing [npc locs item-key]
   (concat
@@ -475,10 +476,9 @@
                        (merge-add (:requires step) (scale-quantities (:consumes step) maximum-desired))
                        (merge-remove (scale-quantities (:provides step) maximum-desired)))
           ; if moving to a location that doesn't provide all :loc :reqs then abort!
-          ; you have to pick things up before you move away from them
+          ; you have to pick things up before you move away from them - i.e. it would have to already be an :npc :req for this to be a possible or sensible strategy
           abort? (and (:reset-loc step) (some #(= (first %) :loc) (keys new-reqs)))
           complete? (empty? (remove (-> start :provides keys set) (keys new-reqs)))]
-      ; TODO: iff complete - must rework travelling steps - because when they were added we had no idea where they were coming from!!!
       (if abort?
         (do
           (println "Aborting!")
@@ -518,6 +518,28 @@
       (when provides {:provides (mapvals provides #(update % :quantity * quantity))})
       (when sub-steps {:sub-steps (map (partial multiply-quantities quantity) sub-steps)}))))
 
+(defn append-optimised-action-step [option step maximum-available n]
+  (let [optimised-step (multiply-quantities 1 (assoc step :max-n maximum-available :quantity n))]
+    (update option :chain conj optimised-step)))
+
+(defn append-optimised-movement-step [option step location destination]
+  (if (= location destination)
+    (do
+      (println "NO MOVEMENT REQUIRED!")
+      option)
+    (let [route (routes [location destination])
+          finalised-movement-step (merge step
+                                         {:ticks     (:ticks route)
+                                          :estimated false
+                                          :sub-steps (map (fn [{:keys [ticks description from to]}]
+                                                            {:name       (str "go to " description)
+                                                             :ticks      ticks
+                                                             :idempotent true
+                                                             :from       from
+                                                             :to         to})
+                                                          (:path route))})]
+      (update option :chain conj finalised-movement-step))))
+
 (defn optimise [option npc world]
 
   ;TODO: does not work on travelling!!! - can we make it work recursively on sub-steps, but still handle travelling sensibly?
@@ -542,21 +564,27 @@
   ;   filled up by 5 <-  eat berry x 5   <-     take berry x 5         <- there are 5 berries
 
   (loop [has (-> option :start :provides)
-         optimised (assoc option :chain []
-                                 :optimised true)
-         [step & chain] (-> option :chain)]
+         location (:location npc)
+         optimising (assoc option :chain []
+                                  :optimised true)
+         [step & more-steps] (-> option :chain)]
     (if step
       (let [maximum-available (get-maximum-available step has)
             maximum-desired (:ideal-n step)
             n (min maximum-available maximum-desired)
             new-has (-> has
-                      (merge-remove (scale-quantities (:consumes step) n))
-                      (merge-add (scale-quantities (:provides step) n)))
-            optimised-step (multiply-quantities 1 (assoc step :max-n maximum-available :quantity n))]
+                        (merge-remove (scale-quantities (:consumes step) n))
+                        (merge-add (scale-quantities (:provides step) n)))
+            destination (:move-to step)
+            new-location (or destination location)
+            new-optimising (if destination
+                             (append-optimised-movement-step optimising step location destination)
+                             (append-optimised-action-step optimising step maximum-available n))]
         (recur new-has
-               (update optimised :chain conj optimised-step)
-               chain))
-      optimised)))
+               new-location
+               new-optimising
+               more-steps))
+      optimising)))
 
 (defn consider-option [npc locs]
   (fn [{:keys [complete optimised abort] :as option}]
