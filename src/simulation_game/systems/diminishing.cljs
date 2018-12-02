@@ -1,4 +1,4 @@
-(ns the-regenetron.systems.diminishing)
+(ns simulation-game.systems.diminishing)
 
 
 (def diminishes?

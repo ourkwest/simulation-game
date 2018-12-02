@@ -1,16 +1,16 @@
-(ns the-regenetron.core
+(ns simulation-game.core
   (:require
     [reagent.core :as reagent :refer [atom]]
     [cljs.pprint :as pp]
     [clojure.string :as string]
-    [the-regenetron.systems.production :as production]
-    [the-regenetron.systems.aging :as aging]
-    [the-regenetron.systems.diminishing :as diminishing]
+    [simulation-game.systems.production :as production]
+    [simulation-game.systems.aging :as aging]
+    [simulation-game.systems.diminishing :as diminishing]
     ))
 
 (enable-console-print!)
 
-(println "This text is printed from src/the-regenetron/core.cljs. Go ahead and edit it and see reloading in action.")
+(println "This text is printed from src/simulation-game/core.cljs. Go ahead and edit it and see reloading in action.")
 
 ;; TODO:
 ;;  * make npc algorithm handle movement around the map
