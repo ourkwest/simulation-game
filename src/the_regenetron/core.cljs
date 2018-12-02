@@ -122,9 +122,9 @@
                (aging/dies-after 50 nil)))
 (def berry-bush (-> (new-item :berry-bush)
                     (production/produces-every 5 berry)
-                    (aging/dies-after 400 pile-of-sticks)))
+                    (aging/dies-after 300 pile-of-sticks)))
 (def scrubland (-> (new-item :scrubland)
-                   (production/produces-every 20 berry-bush)
+                   (production/produces-every 60 berry-bush)
                    (has pile-of-sticks
                         pile-of-sticks
                         pile-of-sticks
@@ -137,11 +137,16 @@
 
 (def embers (-> (new-item :embers)))
 
+(def coconut (-> (new-item :coconut)))
+(def coconut-palm (-> (new-item :coconut-palm)
+                      (production/produces-every 100 coconut)))
+
+(def axe (new-item :axe))
+
 ;TODO: is every npc going to have it's own map as well as the world having territory?
 (def places {:beach {:label "the beach"
                      :id  :beach
-                     :has [{:id  :palm-tree
-                            :has [berry berry berry berry berry]}]}
+                     :has [coconut-palm]}
              :village-0 {:label  "the centre of the village"
                          :id :village-0
                          :has [embers]}
@@ -223,7 +228,7 @@
     :provides {[:npc :drink] {:quantity 1}}
     :consumes {[:npc :water] {:quantity 1}}}
    {:name     "draw water"
-    :ticks    5
+    :ticks    10
     :provides {[:loc :water] {:quantity 5}}
     :requires {[:loc :well] {:quantity 1}}}
    {:name     "eat berry"
@@ -249,6 +254,19 @@
     :ticks    5
     :requires {[:loc :flames] {:quantity 1}}
     :provides {[:npc :warmth] {:quantity 5}}}
+
+   {:name     "open a coconut"
+    :ticks    15
+    :requires {[:npc :axe] {:quantity 1}}
+    :consumes {[:npc :coconut] {:quantity 1}}
+    :provides {[:npc :half-coconut] {:quantity 1}
+               [:loc :half-coconut] {:quantity 1}}}
+
+   {:name     "eat coconut"
+    :ticks    2
+    :provides {[:npc :drink] {:quantity 10}
+               [:npc :food]  {:quantity 20}}
+    :consumes {[:npc :half-coconut] {:quantity 1}}}
 
    {:name     "fell a tree"
     :ticks    100
@@ -331,13 +349,12 @@
                                        [:npc :sleep] {:quantity 10}
                                        [:npc :chat]  {:quantity 0} ; capped at 75? some way to differentiate between needs and wants?
                                        })
-                       :has         [{:id       :water
-                                      :quantity 3}            ; liquid hold limit is low, but can carry eg. a bucket that can hold more
+                       :has         [
+                                     ;{:id       :water
+                                     ; :quantity 3}            ; TODO: liquid hold limit is low, but can carry eg. a bucket that can hold more
                                      ;{:id       :berry
                                      ; :quantity 5}            ; fifo queue when picking things up - hold limit?
-                                     {:id  :bucket
-                                      :has [{:id       :water
-                                             :quantity 5}]}]
+                                     axe]
                        :known-steps steps
                        :location    :beach
                        :busy        nil}}}))
@@ -359,10 +376,12 @@
                                [(keyword (string/lower-case name))
                                 {:name        name
                                  :reqs        (zipmap npc-needs (repeat {:quantity (pseudo-rand-int 50)}))
-                                 :has         []
+                                 :has         (if (< 3 (pseudo-rand-int 10))
+                                                []
+                                                [axe])
                                  :known-steps steps
                                  :location    (pseudo-rand-nth (keys places))
-                                 :busy nil}]))]
+                                 :busy        nil}]))]
     (update state :people merge more-people)))
 
 (defn mapvals [m f]
