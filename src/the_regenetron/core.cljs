@@ -255,14 +255,14 @@
     :requires {[:loc :flames] {:quantity 1}}
     :provides {[:npc :warmth] {:quantity 5}}}
 
-   {:name     "open a coconut"
+   {:name     "split coconut in half"
     :ticks    15
     :requires {[:npc :axe] {:quantity 1}}
     :consumes {[:npc :coconut] {:quantity 1}}
     :provides {[:npc :half-coconut] {:quantity 1}
                [:loc :half-coconut] {:quantity 1}}}
 
-   {:name     "eat coconut"
+   {:name     "eat half coconut"
     :ticks    2
     :provides {[:npc :drink] {:quantity 10}
                [:npc :food]  {:quantity 20}}
